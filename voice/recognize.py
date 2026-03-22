@@ -12,7 +12,8 @@ def recognize(audio_file):
             return r.recognize_google(audio, language=LANGUAGE)
 
         except sr.UnknownValueError:
-            return None
+            print("Не вдалося розпізнати мову.")
+            return ""
         except sr.RequestError as e:
-            print(f"Speech recognition error: {e}")
-            return None
+            print("Помилка сервісу:", e)
+            return ""
