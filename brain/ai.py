@@ -1,23 +1,33 @@
 from openai import OpenAI
 import json
 
+from utils.commands_config import COMMANDS
 from utils.config import OPENAI_API_KEY, OPENAI_MODEL
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 conversation = []
 
-SYSTEM_PROMPT = """
+def _build_system_prompt():
+  command_examples = []
+  for action, data in COMMANDS.items():
+    examples = ", ".join(data["examples"])
+    command_examples.append(f'- "{action}": {data["description"]}. Приклади: {examples}')
+
+  joined_examples = "\n".join(command_examples)
+
+  return f"""
 Ти голосовий AI-асистент.
 Твоя задача: визначити, чи є репліка користувача командою для виконання, чи це звичайне питання/повідомлення.
 
 Відповідай тільки валідним JSON без markdown, без пояснень і без code fences.
 
+Дозволені дії команд:
+{joined_examples}
+
 Дозволені формати відповіді:
-{"type":"command","action":"open_google"}
-{"type":"command","action":"open_explorer"}
-{"type":"command","action":"open_code"}
-{"type":"chat","response":"текст відповіді користувачу"}
+{{"type":"command","action":"назва_дії"}}
+{{"type":"chat","response":"текст відповіді користувачу"}}
 
 Якщо репліка не є однією з відомих команд, поверни формат chat і коротко відповідай по суті.
 """
@@ -48,7 +58,7 @@ def ask_ai(text):
   response = client.responses.create(
     model=OPENAI_MODEL,
     input=[
-      {"role": "system", "content": SYSTEM_PROMPT},
+      {"role": "system", "content": _build_system_prompt()},
       *conversation
     ]
   )

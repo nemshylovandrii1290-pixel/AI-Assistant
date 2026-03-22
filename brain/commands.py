@@ -1,17 +1,21 @@
 import os
 import webbrowser
 
+from utils.commands_config import COMMANDS
+
+
 def execute_action(action):
-    if action == "open_google":
-        webbrowser.open("https://www.google.com")
-        return "Відкриваю Google"
+    command = COMMANDS.get(action)
 
-    if action == "open_explorer":
-        os.system("explorer")
-        return "Відкриваю провідник"
+    if not command:
+        return "Не знаю такої команди"
 
-    if action == "open_code":
-        os.system("code")
-        return "Відкриваю VS Code"
+    if command["kind"] == "url":
+        webbrowser.open(command["target"])
+        return command["response"]
 
-    return "Не знаю такої команди"
+    if command["kind"] == "command":
+        os.system(command["target"])
+        return command["response"]
+
+    return "Не знаю, як виконати цю команду"
