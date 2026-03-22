@@ -57,7 +57,7 @@ def main():
     result_type = ai_result.get("type")
 
     if result_type == "command":
-      result = execute_action(ai_result.get("action"))
+      result = execute_action(ai_result.get("action"), ai_result)
       speak(result)
       continue
 

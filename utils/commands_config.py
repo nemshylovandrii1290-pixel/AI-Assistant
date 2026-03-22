@@ -1,4 +1,15 @@
 COMMANDS = {
+    "open_app": {
+        "description": "Відкрити встановлений додаток на комп'ютері за назвою",
+        "response": "Відкриваю додаток",
+        "kind": "app",
+        "target": None,
+        "examples": [
+            "відкрий telegram",
+            "запусти obs",
+            "open discord"
+        ]
+    },
     "open_google": {
         "description": "Відкрити Google у браузері",
         "response": "Відкриваю Google",
