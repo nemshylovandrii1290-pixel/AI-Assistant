@@ -5,6 +5,7 @@ from voice.speak import speak
 from brain.ai import ask_ai
 from voice.recognize import recognize
 from brain.commands import execute_action
+from utils.normalize import normalize_text
 
 WAKE_WORDS = ["edit", "едіт", "едит"]
 
@@ -53,6 +54,7 @@ def main():
     if text == original_text and any(word in original_text.lower() for word in WAKE_WORDS):
       text = text_lower
 
+    text = normalize_text(text)
     ai_result = ask_ai(text)
     result_type = ai_result.get("type")
 

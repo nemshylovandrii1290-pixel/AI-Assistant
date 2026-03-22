@@ -1,16 +1,15 @@
 import os
-import re
-import subprocess
 import webbrowser
 
 from utils.commands_config import COMMANDS
 from utils.app_finder import find_app
+from utils.normalize import normalize_text
 
 def execute_action(action, data=None):
     command = COMMANDS.get(action)
 
     if action == "open_app":
-        app_name = (data or {}).get("app")
+        app_name = normalize_text((data or {}).get("app", ""))
 
         if not app_name:
             return "Не зрозумів, який саме додаток потрібно відкрити."
