@@ -24,6 +24,7 @@
     "numpy",
     "pipwin",
     "Prind",
+    "PROGRAMDATA",
     "pycache",
     "pycparser",
     "pydantic",
