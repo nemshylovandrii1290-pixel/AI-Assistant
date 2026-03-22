@@ -4,7 +4,7 @@ from voice.listen import listen
 from voice.speak import speak
 from brain.ai import ask_ai
 from voice.recognize import recognize
-from brain.commands import handle_command
+from brain.commands import execute_action
 
 WAKE_WORDS = ["edit", "едіт", "едит"]
 
@@ -34,33 +34,39 @@ def main():
       speak("Окей, вимикаюсь")
       return
 
-    # 🔥 якщо сказали wake word → активуємося
+    original_text = text
+
     if any(word in text_lower for word in WAKE_WORDS):
       last_activation_time = time.time()
+
       for word in WAKE_WORDS:
         text_lower = text_lower.replace(word, "").strip()
 
       if not text_lower:
-        speak("Привіт! Чим можу допомогти?")
+        speak("Так?")
         continue
+      text = text_lower
 
-    # ❌ якщо НЕ активний → ігноруємо
     if not is_active():
       continue
 
-    if text_lower != text.lower():
-      speak("Так?")
+    if text == original_text and any(word in original_text.lower() for word in WAKE_WORDS):
       text = text_lower
 
-    # 🔧 команди
-    command_response = handle_command(text)
-    if command_response:
-      speak(command_response)
+    ai_result = ask_ai(text)
+    result_type = ai_result.get("type")
+
+    if result_type == "command":
+      result = execute_action(ai_result.get("action"))
+      speak(result)
       continue
 
-    # 🤖 AI
-    response = ask_ai(text)
-    speak(response)
+    if result_type == "chat":
+      speak(ai_result.get("response", "Не зрозумів запит."))
+      continue
+
+    speak("Не зрозумів запит.")
+
 
 if __name__ == "__main__":
   try:

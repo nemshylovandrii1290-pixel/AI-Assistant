@@ -1,25 +1,17 @@
 import os
 import webbrowser
 
-def handle_command(text):
-    if not text:
-        return None
-
-    text = text.lower()
-
-    # 🌐 Відкрити Google
-    if "гугл" in text or "google" in text:
+def execute_action(action):
+    if action == "open_google":
         webbrowser.open("https://www.google.com")
-        return "Відкриваю Google."
+        return "Відкриваю Google"
 
-    # 💻 Відкрити VS Code
-    if "code" in text or "visual studio code" in text:
-        os.system("code")
-        return "Відкриваю VS Code"
-
-    # 📁 Відкрити папку
-    if "провідник" in text or "explorer" in text:
+    if action == "open_explorer":
         os.system("explorer")
         return "Відкриваю провідник"
 
-    return None
+    if action == "open_code":
+        os.system("code")
+        return "Відкриваю VS Code"
+
+    return "Не знаю такої команди"
