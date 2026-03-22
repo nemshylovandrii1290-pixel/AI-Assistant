@@ -1,6 +1,7 @@
 import os
 import json
 import subprocess
+import re
 
 from difflib import SequenceMatcher
 
@@ -21,6 +22,11 @@ APP_CACHE = []
 CACHE_READY = False
 CACHE_DIR = os.path.join(os.getcwd(), ".cache")
 APP_CACHE_FILE = os.path.join(CACHE_DIR, "app_index.json")
+BAD_EXECUTABLE_TOKENS = {
+    "crash", "helper", "service", "setup", "uninstall", "update", "updater",
+    "diagnostics", "report", "redist", "redistributable", "vc_redist", "7z",
+    "installer", "install", "telemetry"
+}
 
 
 def _iter_app_files(base):
@@ -31,12 +37,12 @@ def _iter_app_files(base):
 
         for file_name in files:
             lower_name = file_name.lower()
-            if lower_name.endswith(".exe") or lower_name.endswith(".lnk"):
+            if lower_name.endswith(".exe") or lower_name.endswith(".lnk") or lower_name.endswith(".url"):
                 yield root, file_name
 
 
 def _name_variants(file_name, root):
-    base_name, ext = os.path.splitext(file_name)
+    base_name, _ = os.path.splitext(file_name)
     variants = {
         normalize_text(file_name.lower()),
         normalize_text(base_name.lower()),
@@ -50,18 +56,59 @@ def _name_variants(file_name, root):
     return {variant.strip() for variant in variants if variant.strip()}
 
 
+def _tokens(text):
+    return [token for token in re.split(r"[^a-z0-9а-яіїєґ]+", text.lower()) if token]
+
+
+def _entry_penalty(entry):
+    base_name = entry["base_name"]
+    penalty = 0.0
+
+    if entry["ext"] == ".exe" and any(token in base_name for token in BAD_EXECUTABLE_TOKENS):
+        penalty += 0.22
+
+    return penalty
+
+
 def _score_match(query, entry):
-    best_score = 0.0
+    query_tokens = _tokens(query)
+    base_name = entry["base_name"]
+    parent_name = entry["parent_name"]
+    names = entry["names"]
+    score = 0.0
 
-    for variant in entry["names"]:
-        if query == variant:
-            return 1.0
-        if query in variant or variant in query:
-            best_score = max(best_score, 0.94)
-        else:
-            best_score = max(best_score, SequenceMatcher(None, query, variant).ratio())
+    if query in names:
+        score = max(score, 1.0 if entry["ext"] in {".lnk", ".url"} else 0.97)
 
-    return best_score
+    if query == base_name:
+        score = max(score, 0.99)
+
+    if parent_name and query == parent_name:
+        score = max(score, 0.82)
+
+    if query in base_name or base_name in query:
+        score = max(score, 0.96)
+
+    if parent_name and (query in parent_name or parent_name in query):
+        score = max(score, 0.78)
+
+    if query_tokens:
+        overlap = sum(1 for token in query_tokens if token in base_name or token in parent_name)
+        score = max(score, overlap / len(query_tokens))
+
+    score = max(score, SequenceMatcher(None, query, base_name).ratio() * 0.95)
+
+    if parent_name:
+        score = max(score, SequenceMatcher(None, query, parent_name).ratio() * 0.72)
+
+    for variant in names:
+        score = max(score, SequenceMatcher(None, query, variant).ratio() * 0.88)
+
+    if entry["ext"] in {".lnk", ".url"}:
+        score += 0.03
+
+    score -= _entry_penalty(entry)
+    return max(score, 0.0)
 
 
 def _serialize_entry(entry):
@@ -69,14 +116,27 @@ def _serialize_entry(entry):
         "path": entry["path"],
         "ext": entry["ext"],
         "names": sorted(entry["names"]),
+        "base_name": entry["base_name"],
+        "parent_name": entry["parent_name"],
     }
 
 
 def _deserialize_entry(entry):
+    path = entry["path"]
+    parent_name = entry.get("parent_name")
+    if parent_name is None:
+        parent_name = normalize_text(os.path.basename(os.path.dirname(path)).lower())
+
+    base_name = entry.get("base_name")
+    if base_name is None:
+        base_name = normalize_text(os.path.splitext(os.path.basename(path))[0].lower())
+
     return {
-        "path": entry["path"],
+        "path": path,
         "ext": entry["ext"],
         "names": set(entry["names"]),
+        "base_name": base_name,
+        "parent_name": parent_name,
     }
 
 
@@ -102,7 +162,7 @@ def _load_cache_from_disk():
     try:
         with open(APP_CACHE_FILE, "r", encoding="utf-8") as cache_file:
             data = json.load(cache_file)
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError, KeyError):
         return False
 
     APP_CACHE = [_deserialize_entry(entry) for entry in data]
@@ -139,6 +199,8 @@ def build_cache():
                 "path": full_path,
                 "ext": os.path.splitext(file_name)[1].lower(),
                 "names": _name_variants(file_name, root),
+                "base_name": normalize_text(os.path.splitext(file_name)[0].lower()),
+                "parent_name": normalize_text(os.path.basename(root).lower()),
             })
 
     _save_cache_to_disk()
@@ -154,7 +216,11 @@ def find_app(app_name):
         return None
 
     for entry in APP_CACHE:
-        if app_name in entry["names"]:
+        if app_name == entry["base_name"] and _entry_penalty(entry) < 0.1:
+            return entry["path"]
+
+    for entry in APP_CACHE:
+        if entry["ext"] in {".lnk", ".url"} and app_name in entry["names"]:
             return entry["path"]
 
     try:
@@ -180,7 +246,7 @@ def find_app(app_name):
             best_score = score
             best_path = entry["path"]
 
-    if best_score >= 0.72:
+    if best_score >= 0.78:
         return best_path
 
     return None

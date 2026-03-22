@@ -1,5 +1,6 @@
 from openai import OpenAI
 import json
+import re
 
 from utils.commands_config import COMMANDS
 from utils.config import OPENAI_API_KEY, OPENAI_MODEL
@@ -81,6 +82,13 @@ def ask_ai(text):
   try:
     return json.loads(reply)
   except json.JSONDecodeError:
+    match = re.search(r"\{.*\}", reply, re.DOTALL)
+    if match:
+      try:
+        return json.loads(match.group(0))
+      except json.JSONDecodeError:
+        pass
+
     return {
       "type": "chat",
       "response": reply or "Не вдалося обробити відповідь."
