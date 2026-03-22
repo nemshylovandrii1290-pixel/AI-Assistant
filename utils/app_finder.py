@@ -1,4 +1,5 @@
 import os
+import json
 import subprocess
 
 from difflib import SequenceMatcher
@@ -18,6 +19,8 @@ SEARCH_PATHS = [
 
 APP_CACHE = []
 CACHE_READY = False
+CACHE_DIR = os.path.join(os.getcwd(), ".cache")
+APP_CACHE_FILE = os.path.join(CACHE_DIR, "app_index.json")
 
 
 def _iter_app_files(base):
@@ -60,10 +63,70 @@ def _score_match(query, entry):
 
     return best_score
 
+
+def _serialize_entry(entry):
+    return {
+        "path": entry["path"],
+        "ext": entry["ext"],
+        "names": sorted(entry["names"]),
+    }
+
+
+def _deserialize_entry(entry):
+    return {
+        "path": entry["path"],
+        "ext": entry["ext"],
+        "names": set(entry["names"]),
+    }
+
+
+def _is_cache_valid():
+    if not os.path.exists(APP_CACHE_FILE):
+        return False
+
+    cache_mtime = os.path.getmtime(APP_CACHE_FILE)
+
+    for base in SEARCH_PATHS:
+        if base and os.path.exists(base) and os.path.getmtime(base) > cache_mtime:
+            return False
+
+    return True
+
+
+def _load_cache_from_disk():
+    global APP_CACHE, CACHE_READY
+
+    if not _is_cache_valid():
+        return False
+
+    try:
+        with open(APP_CACHE_FILE, "r", encoding="utf-8") as cache_file:
+            data = json.load(cache_file)
+    except (OSError, json.JSONDecodeError):
+        return False
+
+    APP_CACHE = [_deserialize_entry(entry) for entry in data]
+    CACHE_READY = True
+    return True
+
+
+def _save_cache_to_disk():
+    os.makedirs(CACHE_DIR, exist_ok=True)
+
+    with open(APP_CACHE_FILE, "w", encoding="utf-8") as cache_file:
+        json.dump(
+            [_serialize_entry(entry) for entry in APP_CACHE],
+            cache_file,
+            ensure_ascii=False
+        )
+
 def build_cache():
     global CACHE_READY
 
     if CACHE_READY:
+        return
+
+    if _load_cache_from_disk():
         return
 
     for base in SEARCH_PATHS:
@@ -78,6 +141,7 @@ def build_cache():
                 "names": _name_variants(file_name, root),
             })
 
+    _save_cache_to_disk()
     CACHE_READY = True
 
 
