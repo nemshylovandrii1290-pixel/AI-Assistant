@@ -1,4 +1,3 @@
-import json
 import os
 import shutil
 import subprocess
@@ -7,6 +6,7 @@ import webbrowser
 from utils.commands_config import COMMANDS
 from utils.app_finder import find_app
 from utils.normalize import normalize_text
+from utils.special_launchers import try_special_case_launch
 
 
 def _open_path(path):
@@ -21,6 +21,10 @@ def _open_path(path):
         return result.returncode == 0
 
 
+def _log_stage(stage, message):
+    print(f"[launch:{stage}] {message}")
+
+
 def _try_system_launch(app_name):
     candidates = [app_name]
 
@@ -30,62 +34,8 @@ def _try_system_launch(app_name):
     for candidate in candidates:
         resolved = shutil.which(candidate)
         if resolved and _open_path(resolved):
+            _log_stage("system", f"resolved '{app_name}' via PATH: {resolved}")
             return True
-
-    return False
-
-
-def _find_start_app_id(app_name):
-    script = f"""
-    $query = "{app_name.replace('"', '`"')}"
-    $apps = Get-StartApps | Where-Object {{ $_.Name -like "*$query*" }}
-    $apps | Select-Object Name, AppID | ConvertTo-Json -Compress
-    """
-
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-Command", script],
-        capture_output=True,
-        text=True,
-        check=False
-    )
-
-    if result.returncode != 0 or not result.stdout.strip():
-        return None
-
-    try:
-        data = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return None
-
-    if isinstance(data, list):
-        if not data:
-            return None
-        return data[0].get("AppID")
-
-    return data.get("AppID")
-
-
-def _try_special_case_launch(app_name):
-    start_app_id = _find_start_app_id(app_name)
-    if start_app_id:
-        subprocess.run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-Command",
-                f'Start-Process "shell:AppsFolder\\{start_app_id}"'
-            ],
-            check=False
-        )
-        return True
-
-    if app_name in ["youtube", "ютуб"]:
-        webbrowser.open("https://youtube.com")
-        return True
-
-    if app_name in ["instagram", "інстаграм"]:
-        webbrowser.open("https://instagram.com")
-        return True
 
     return False
 
@@ -106,13 +56,16 @@ def execute_action(action, data=None):
         # 2. Index
         path = find_app(app_name)
         if path and _open_path(path):
+            _log_stage("index", f"resolved '{app_name}' via app index: {path}")
             return f"Відкриваю {app_name}"
 
         # 3. Special cases
         if _try_special_case_launch(app_name):
+            _log_stage("special", f"resolved '{app_name}' via special launcher")
             return f"Відкриваю {app_name}"
 
         # 4. Failback
+        _log_stage("failback", f"app '{app_name}' not found")
         return f"Не вдалося знайти додаток {app_name}"
 
     if not command:
