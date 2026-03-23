@@ -60,7 +60,7 @@ def execute_action(action, data=None):
             return f"Відкриваю {app_name}"
 
         # 3. Special cases
-        if _try_special_case_launch(app_name):
+        if try_special_case_launch(app_name):
             _log_stage("special", f"resolved '{app_name}' via special launcher")
             return f"Відкриваю {app_name}"
 
