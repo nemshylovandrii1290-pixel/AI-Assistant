@@ -1,8 +1,11 @@
 import sounddevice as sd
 import wave
 
-def listen(duration=5, filename="audio.wav"):
-  samplerate = 16000
+from utils.config import LISTEN_DURATION, SAMPLE_RATE
+
+
+def listen(duration=LISTEN_DURATION, filename="audio.wav"):
+  samplerate = SAMPLE_RATE
 
   print("Listening...")
   audio = sd.rec(int(duration * samplerate), samplerate=samplerate, channels=1, dtype='int16')

@@ -2,23 +2,38 @@ import speech_recognition as sr
 import io
 import wave
 
-from utils.config import LANGUAGE
+from utils.config import RECOGNITION_LANGUAGES
+
+
+def _recognize_with_languages(recognizer, audio):
+    request_error = None
+
+    for language in RECOGNITION_LANGUAGES:
+        try:
+            text = recognizer.recognize_google(audio, language=language)
+            if text:
+                print(f"[speech:{language}] recognized")
+                return text
+        except sr.UnknownValueError:
+            continue
+        except sr.RequestError as error:
+            request_error = error
+
+    if request_error:
+        print("Помилка сервісу:", request_error)
+    else:
+        print("Не вдалося розпізнати мову.")
+
+    return ""
 
 
 def recognize(audio_data, samplerate=16000):
-    r = sr.Recognizer()
+    recognizer = sr.Recognizer()
 
     if isinstance(audio_data, str):
         with sr.AudioFile(audio_data) as source:
-            audio = r.record(source)
-            try:
-                return r.recognize_google(audio, language=LANGUAGE)
-            except sr.UnknownValueError:
-                print("Не вдалося розпізнати мову.")
-                return ""
-            except sr.RequestError as e:
-                print("Помилка сервісу:", e)
-                return ""
+            audio = recognizer.record(source)
+            return _recognize_with_languages(recognizer, audio)
 
     wav_buffer = io.BytesIO()
     with wave.open(wav_buffer, 'wb') as f:
@@ -30,13 +45,5 @@ def recognize(audio_data, samplerate=16000):
     wav_buffer.seek(0)
 
     with sr.AudioFile(wav_buffer) as source:
-        audio = r.record(source)
-        try:
-            return r.recognize_google(audio, language=LANGUAGE)
-
-        except sr.UnknownValueError:
-            print("Не вдалося розпізнати мову.")
-            return ""
-        except sr.RequestError as e:
-            print("Помилка сервісу:", e)
-            return ""
+        audio = recognizer.record(source)
+        return _recognize_with_languages(recognizer, audio)
