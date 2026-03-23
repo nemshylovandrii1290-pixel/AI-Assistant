@@ -1,91 +1,86 @@
 import time
 
-from voice.listen import listen
-from voice.speak import speak
 from brain.ai import ask_ai
-from voice.recognize import recognize
 from brain.commands import execute_action
 from utils.app_finder import ensure_app_index
 from utils.intent_parser import extract_open_target
 from utils.normalize import normalize_text
+from voice.listen import listen
+from voice.recognize import recognize
+from voice.speak import speak
+
 
 WAKE_WORDS = ["edit", "едіт", "едит"]
-
-ACTIVE_TIMEOUT = 300  # 🔥 секунд (можеш поставити 300 = 5 хв)
+STOP_WORDS = ["стоп", "вистачить"]
+ACTIVE_TIMEOUT = 300
 last_activation_time = 0
+
 
 def is_active():
     return time.time() - last_activation_time < ACTIVE_TIMEOUT
 
 
 def main():
-  global last_activation_time
+    global last_activation_time
 
-  index_source, app_count = ensure_app_index()
-  print(f"[index:{index_source}] loaded {app_count} app entries")
+    index_source, app_count = ensure_app_index()
+    print(f"[index:{index_source}] loaded {app_count} app entries")
 
-  while True:
-    audio_file = listen()
-    text = recognize(audio_file)
+    while True:
+        audio_data = listen()
+        text = recognize(audio_data)
 
-    if not text:
-      print("Не вдалося розпізнати мову.")
-      continue
+        if not text:
+            print("Не вдалося розпізнати мову.")
+            continue
 
-    text_lower = text.lower()
-    print("Ти сказав:", text)
+        original_text = text
+        normalized_text = normalize_text(text)
+        text_lower = normalized_text.lower()
+        print("Ти сказав:", original_text)
 
-    if "стоп" in text_lower or "вистачить" in text_lower:
-      last_activation_time = 0
-      speak("Окей, вимикаюсь")
-      return
+        if any(stop_word in text_lower for stop_word in STOP_WORDS):
+            last_activation_time = 0
+            speak("Окей, вимикаюсь")
+            return
 
-    original_text = text
+        direct_open_target = extract_open_target(text_lower)
+        if direct_open_target:
+            result = execute_action("open_app", {"app": direct_open_target})
+            speak(result)
+            continue
 
-    if any(word in text_lower for word in WAKE_WORDS):
-      last_activation_time = time.time()
+        if any(wake_word in text_lower for wake_word in WAKE_WORDS):
+            last_activation_time = time.time()
+            for wake_word in WAKE_WORDS:
+                text_lower = text_lower.replace(wake_word, "").strip()
 
-      for word in WAKE_WORDS:
-        text_lower = text_lower.replace(word, "").strip()
+            if not text_lower:
+                speak("Так?")
+                continue
 
-      if not text_lower:
-        speak("Так?")
-        continue
-      text = text_lower
+        if not is_active():
+            continue
 
-    if not is_active():
-      continue
+        ai_result = ask_ai(text_lower)
+        result_type = ai_result.get("type")
 
-    if text == original_text and any(word in original_text.lower() for word in WAKE_WORDS):
-      text = text_lower
+        if result_type == "command":
+            result = execute_action(ai_result.get("action"), ai_result)
+            speak(result)
+            continue
 
-    text = normalize_text(text)
+        if result_type == "chat":
+            speak(ai_result.get("response", "Не зрозумів запит."))
+            continue
 
-    direct_open_target = extract_open_target(text)
-    if direct_open_target:
-      result = execute_action("open_app", {"app": direct_open_target})
-      speak(result)
-      continue
-
-    ai_result = ask_ai(text)
-    result_type = ai_result.get("type")
-
-    if result_type == "command":
-      result = execute_action(ai_result.get("action"), ai_result)
-      speak(result)
-      continue
-
-    if result_type == "chat":
-      speak(ai_result.get("response", "Не зрозумів запит."))
-      continue
-
-    speak("Не зрозумів запит.")
+        speak("Не зрозумів запит.")
 
 
 if __name__ == "__main__":
-  try:
-    main()
-  except KeyboardInterrupt:
-    print("\nАсистент зупинений.")
-  else:
-    print("Асистент зупинений.")
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nАсистент зупинений.")
+    else:
+        print("Асистент зупинений.")

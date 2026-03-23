@@ -1,20 +1,69 @@
+from collections import deque
+
+import numpy as np
 import sounddevice as sd
-import wave
 
-from utils.config import LISTEN_DURATION, SAMPLE_RATE
+from utils.config import (
+    AMBIENT_CHUNKS,
+    CHUNK_DURATION,
+    DYNAMIC_THRESHOLD_MULTIPLIER,
+    LISTEN_DURATION,
+    MIN_SPEECH_DURATION,
+    PRE_ROLL_DURATION,
+    SAMPLE_RATE,
+    SILENCE_TIMEOUT,
+    SPEECH_THRESHOLD,
+)
 
 
-def listen(duration=LISTEN_DURATION, filename="audio.wav"):
-  samplerate = SAMPLE_RATE
+def listen(duration=LISTEN_DURATION):
+    samplerate = SAMPLE_RATE
+    chunk_size = int(samplerate * CHUNK_DURATION)
+    max_chunks = max(1, int(duration / CHUNK_DURATION))
+    silence_limit = max(1, int(SILENCE_TIMEOUT / CHUNK_DURATION))
+    min_speech_chunks = max(1, int(MIN_SPEECH_DURATION / CHUNK_DURATION))
+    pre_roll_limit = max(1, int(PRE_ROLL_DURATION / CHUNK_DURATION))
+    recent_chunks = deque(maxlen=pre_roll_limit)
+    ambient_levels = deque(maxlen=max(1, AMBIENT_CHUNKS))
+    captured_chunks = []
+    started = False
+    silence_chunks = 0
 
-  print("Listening...")
-  audio = sd.rec(int(duration * samplerate), samplerate=samplerate, channels=1, dtype='int16')
-  sd.wait()
+    print("Listening...")
 
-  with wave.open(filename, 'wb') as wf:
-    wf.setnchannels(1)
-    wf.setsampwidth(2)
-    wf.setframerate(samplerate)
-    wf.writeframes(audio.tobytes())
+    with sd.InputStream(
+        samplerate=samplerate,
+        channels=1,
+        dtype="int16",
+        blocksize=chunk_size,
+    ) as stream:
+        for _ in range(max_chunks):
+            chunk, _ = stream.read(chunk_size)
+            chunk_copy = chunk.copy()
+            volume = float(np.abs(chunk_copy).mean())
 
-    return filename
+            if not started:
+                recent_chunks.append(chunk_copy)
+                ambient_levels.append(volume)
+
+            ambient_level = max(SPEECH_THRESHOLD, int(np.median(ambient_levels) * DYNAMIC_THRESHOLD_MULTIPLIER))
+
+            if volume >= ambient_level:
+                if not started:
+                    captured_chunks.extend(recent_chunks)
+                    started = True
+
+                silence_chunks = 0
+                captured_chunks.append(chunk_copy)
+                continue
+
+            if started:
+                captured_chunks.append(chunk_copy)
+                silence_chunks += 1
+                if silence_chunks >= silence_limit and len(captured_chunks) >= min_speech_chunks:
+                    break
+
+    if not captured_chunks:
+        return None
+
+    return np.concatenate(captured_chunks, axis=0)

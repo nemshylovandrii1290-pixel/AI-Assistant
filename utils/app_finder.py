@@ -1,77 +1,131 @@
-import os
 import json
-import subprocess
+import os
 import re
+import subprocess
 
 from difflib import SequenceMatcher
 
 from utils.normalize import normalize_text
 
+
 SEARCH_PATHS = [
     "C:\\Program Files",
     "C:\\Program Files (x86)",
     os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs"),
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WindowsApps"),
     os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows", "Start Menu", "Programs"),
     os.path.join(os.environ.get("PROGRAMDATA", ""), "Microsoft", "Windows", "Start Menu", "Programs"),
     os.path.join(os.environ.get("USERPROFILE", ""), "Desktop"),
+    os.path.join(os.environ.get("USERPROFILE", ""), "Documents"),
+    os.path.join(os.environ.get("USERPROFILE", ""), "Downloads"),
     os.path.join(os.environ.get("PUBLIC", "C:\\Users\\Public"), "Desktop"),
-    os.path.join(os.environ.get("USERPROFILE", ""), "OneDrive", "Desktop")
+    os.path.join(os.environ.get("USERPROFILE", ""), "OneDrive", "Desktop"),
 ]
+
+SKIP_DIRS = {
+    "__pycache__",
+    ".git",
+    ".venv",
+    "cache",
+    "node_modules",
+    "temp",
+    "tmp",
+}
+
+BAD_EXECUTABLE_TOKENS = {
+    "7z",
+    "amf",
+    "browser",
+    "checker",
+    "crash",
+    "darkmodecheck",
+    "diagnostics",
+    "directvobsub",
+    "ffmpeg",
+    "graphics",
+    "helper",
+    "install",
+    "installer",
+    "nvenc",
+    "offsets",
+    "overlay",
+    "page",
+    "permission",
+    "qsv",
+    "redist",
+    "redistributable",
+    "report",
+    "service",
+    "setup",
+    "support",
+    "telemetry",
+    "test",
+    "uninstall",
+    "update",
+    "updater",
+    "vc_redist",
+    "vobsub",
+}
 
 APP_CACHE = []
 CACHE_READY = False
 CACHE_DIR = os.path.join(os.getcwd(), ".cache")
 APP_CACHE_FILE = os.path.join(CACHE_DIR, "app_index.json")
 LAST_CACHE_SOURCE = "none"
-BAD_EXECUTABLE_TOKENS = {
-    "crash", "helper", "service", "setup", "uninstall", "update", "updater",
-    "diagnostics", "report", "redist", "redistributable", "vc_redist", "7z",
-    "installer", "install", "telemetry", "test", "ffmpeg", "browser",
-    "page", "qsv", "nvenc", "amf", "vobsub", "directvobsub"
-}
+CACHE_VERSION = 2
+
+
+def _clean_variant(text):
+    normalized = normalize_text(text)
+    normalized = re.sub(r"[^a-z0-9а-яіїєґ]+", " ", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
+
+
+def _split_camel(name):
+    return re.sub(r"(?<=[a-zа-яіїєґ])(?=[A-ZА-ЯІЇЄҐ0-9])", " ", name)
 
 
 def _iter_app_files(base):
     for root, dirs, files in os.walk(base):
-        dirs[:] = [directory for directory in dirs if directory.lower() not in {
-            "__pycache__", ".git", ".venv", "node_modules", "temp", "tmp", "cache"
-        }]
+        dirs[:] = [directory for directory in dirs if directory.lower() not in SKIP_DIRS]
 
         for file_name in files:
             lower_name = file_name.lower()
-            if lower_name.endswith(".exe") or lower_name.endswith(".lnk") or lower_name.endswith(".url"):
+            if lower_name.endswith((".exe", ".lnk", ".url", ".bat", ".cmd")):
                 yield root, file_name
 
 
 def _name_variants(file_name, root):
     base_name, _ = os.path.splitext(file_name)
-    split_base_name = re.sub(r"(?<=[a-zа-яіїєґ])(?=[A-ZА-ЯІЇЄҐ0-9])", " ", base_name)
-    normalized_split_base_name = normalize_text(split_base_name.lower())
-    compact_base_name = re.sub(r"[^a-z0-9а-яіїєґ]+", " ", normalized_split_base_name).strip()
+    split_base_name = _split_camel(base_name)
+    compact_base = _clean_variant(split_base_name)
+    simplified_base = re.sub(r"(?<=\D)(32|64)$", "", compact_base).strip(" -_")
+    simplified_base = re.sub(r"\b(app|launcher)\b", "", simplified_base).strip()
 
     variants = {
-        normalize_text(file_name.lower()),
-        normalize_text(base_name.lower()),
-        normalized_split_base_name,
-        compact_base_name,
+        _clean_variant(file_name),
+        _clean_variant(base_name),
+        compact_base,
+        simplified_base,
     }
 
     current_root = root
     for _ in range(3):
-        parent = os.path.basename(current_root).lower()
+        parent = os.path.basename(current_root)
         if not parent:
             break
 
-        normalized_parent = normalize_text(parent)
-        compact_parent = re.sub(r"[^a-z0-9а-яіїєґ]+", " ", normalized_parent).strip()
-
+        normalized_parent = _clean_variant(parent)
         variants.add(normalized_parent)
-        variants.add(compact_parent)
-        variants.add(normalize_text(f"{normalized_parent} {normalized_split_base_name}"))
+
+        if compact_base:
+            variants.add(_clean_variant(f"{normalized_parent} {compact_base}"))
+            variants.add(_clean_variant(f"{compact_base} {normalized_parent}"))
 
         current_root = os.path.dirname(current_root)
 
-    return {variant.strip() for variant in variants if variant.strip()}
+    return {variant for variant in variants if variant}
 
 
 def _tokens(text):
@@ -79,11 +133,27 @@ def _tokens(text):
 
 
 def _entry_penalty(entry):
-    base_name = entry["base_name"]
     penalty = 0.0
+    base_name = entry["base_name"]
+    path = entry["path"].lower()
 
     if entry["ext"] == ".exe" and any(token in base_name for token in BAD_EXECUTABLE_TOKENS):
-        penalty += 0.22
+        penalty += 0.24
+
+    if entry["ext"] in {".bat", ".cmd"} and any(token in base_name for token in {"install", "setup", "uninstall"}):
+        penalty += 0.35
+
+    if "windowsapps" in path:
+        penalty += 0.08
+
+    if "\\bin\\" in path or "\\resources\\" in path:
+        penalty += 0.04
+
+    if "\\scripts\\" in path or "\\obs-plugins\\" in path:
+        penalty += 0.18
+
+    if entry["ext"] == ".url":
+        penalty += 0.03
 
     return penalty
 
@@ -98,28 +168,33 @@ def _score_match(query, entry):
     score = 0.0
 
     if query in names:
-        score = max(score, 1.0 if entry["ext"] in {".lnk", ".url"} else 0.97)
+        score = max(score, 1.0 if entry["ext"] == ".lnk" else 0.97)
 
     if query == base_name:
         score = max(score, 0.99)
 
     if parent_name and query == parent_name:
-        score = max(score, 0.82)
+        score = max(score, 0.84)
 
     if len(query) >= 4 and len(base_name) >= 4 and (query in base_name or base_name in query):
-        score = max(score, 0.96)
+        score = max(score, 0.965)
 
     if parent_name and len(query) >= 4 and len(parent_name) >= 4 and (query in parent_name or parent_name in query):
-        score = max(score, 0.78)
+        score = max(score, 0.8)
 
     if query_tokens:
         overlap = sum(1 for token in query_tokens if token in base_tokens or token in parent_tokens)
         score = max(score, overlap / len(query_tokens))
 
+        if base_tokens[: len(query_tokens)] == query_tokens:
+            score = max(score, 0.985 if entry["ext"] in {".lnk", ".bat", ".cmd"} else 0.955)
+
         for variant in names:
             variant_tokens = _tokens(variant)
-            if query_tokens and all(token in variant_tokens for token in query_tokens):
-                score = max(score, 0.99 if entry["ext"] in {".lnk", ".url"} else 0.95)
+            if variant_tokens and all(token in variant_tokens for token in query_tokens):
+                score = max(score, 0.99 if entry["ext"] == ".lnk" else 0.95)
+            if variant_tokens[: len(query_tokens)] == query_tokens:
+                score = max(score, 0.99 if entry["ext"] == ".lnk" else 0.955)
 
     score = max(score, SequenceMatcher(None, query, base_name).ratio() * 0.95)
 
@@ -129,7 +204,7 @@ def _score_match(query, entry):
     for variant in names:
         score = max(score, SequenceMatcher(None, query, variant).ratio() * 0.88)
 
-    if entry["ext"] in {".lnk", ".url"}:
+    if entry["ext"] == ".lnk":
         score += 0.03
 
     score -= _entry_penalty(entry)
@@ -147,21 +222,12 @@ def _serialize_entry(entry):
 
 
 def _deserialize_entry(entry):
-    path = entry["path"]
-    parent_name = entry.get("parent_name")
-    if parent_name is None:
-        parent_name = normalize_text(os.path.basename(os.path.dirname(path)).lower())
-
-    base_name = entry.get("base_name")
-    if base_name is None:
-        base_name = normalize_text(os.path.splitext(os.path.basename(path))[0].lower())
-
     return {
-        "path": path,
+        "path": entry["path"],
         "ext": entry["ext"],
         "names": set(entry["names"]),
-        "base_name": base_name,
-        "parent_name": parent_name,
+        "base_name": entry["base_name"],
+        "parent_name": entry["parent_name"],
     }
 
 
@@ -190,7 +256,10 @@ def _load_cache_from_disk():
     except (OSError, json.JSONDecodeError, KeyError):
         return False
 
-    APP_CACHE = [_deserialize_entry(entry) for entry in data]
+    if not isinstance(data, dict) or data.get("version") != CACHE_VERSION:
+        return False
+
+    APP_CACHE = [_deserialize_entry(entry) for entry in data.get("entries", [])]
     CACHE_READY = True
     LAST_CACHE_SOURCE = "disk"
     return True
@@ -201,9 +270,12 @@ def _save_cache_to_disk():
 
     with open(APP_CACHE_FILE, "w", encoding="utf-8") as cache_file:
         json.dump(
-            [_serialize_entry(entry) for entry in APP_CACHE],
+            {
+                "version": CACHE_VERSION,
+                "entries": [_serialize_entry(entry) for entry in APP_CACHE],
+            },
             cache_file,
-            ensure_ascii=False
+            ensure_ascii=False,
         )
 
 
@@ -219,13 +291,15 @@ def _rebuild_cache():
 
         for root, file_name in _iter_app_files(base):
             full_path = os.path.join(root, file_name)
-            APP_CACHE.append({
-                "path": full_path,
-                "ext": os.path.splitext(file_name)[1].lower(),
-                "names": _name_variants(file_name, root),
-                "base_name": normalize_text(os.path.splitext(file_name)[0].lower()),
-                "parent_name": normalize_text(os.path.basename(root).lower()),
-            })
+            APP_CACHE.append(
+                {
+                    "path": full_path,
+                    "ext": os.path.splitext(file_name)[1].lower(),
+                    "names": _name_variants(file_name, root),
+                    "base_name": _clean_variant(os.path.splitext(file_name)[0]),
+                    "parent_name": _clean_variant(os.path.basename(root)),
+                }
+            )
 
     _save_cache_to_disk()
     CACHE_READY = True
@@ -257,8 +331,15 @@ def find_app(app_name):
     if not app_name:
         return None
 
+    query_tokens = _tokens(app_name)
+
     for entry in APP_CACHE:
         if app_name == entry["base_name"] and _entry_penalty(entry) < 0.1:
+            return entry["path"]
+
+    for entry in APP_CACHE:
+        base_tokens = _tokens(entry["base_name"])
+        if query_tokens and base_tokens[: len(query_tokens)] == query_tokens and _entry_penalty(entry) < 0.12:
             return entry["path"]
 
     for entry in APP_CACHE:
@@ -267,12 +348,12 @@ def find_app(app_name):
 
     if " " not in app_name:
         try:
-            exe_name = app_name if app_name.endswith(".exe") else f"{app_name}.exe"
+            executable_name = app_name if app_name.endswith(".exe") else f"{app_name}.exe"
             where_result = subprocess.run(
-                ["where", exe_name],
+                ["where", executable_name],
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
             )
             first_path = where_result.stdout.strip().splitlines()
             if first_path:

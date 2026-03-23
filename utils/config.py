@@ -13,5 +13,12 @@ RECOGNITION_LANGUAGES = [
     for language in os.getenv("RECOGNITION_LANGUAGES", "uk-UA,ru-RU,en-US").split(",")
     if language.strip()
 ]
-LISTEN_DURATION = float(os.getenv("LISTEN_DURATION", "7"))
 SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "16000"))
+LISTEN_DURATION = float(os.getenv("LISTEN_DURATION", "12"))
+CHUNK_DURATION = float(os.getenv("CHUNK_DURATION", "0.2"))
+SILENCE_TIMEOUT = float(os.getenv("SILENCE_TIMEOUT", "0.8"))
+MIN_SPEECH_DURATION = float(os.getenv("MIN_SPEECH_DURATION", "0.3"))
+SPEECH_THRESHOLD = int(os.getenv("SPEECH_THRESHOLD", "250"))
+PRE_ROLL_DURATION = float(os.getenv("PRE_ROLL_DURATION", "0.4"))
+AMBIENT_CHUNKS = int(os.getenv("AMBIENT_CHUNKS", "6"))
+DYNAMIC_THRESHOLD_MULTIPLIER = float(os.getenv("DYNAMIC_THRESHOLD_MULTIPLIER", "2.2"))
