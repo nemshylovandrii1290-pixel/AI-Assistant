@@ -5,6 +5,7 @@ from voice.speak import speak
 from brain.ai import ask_ai
 from voice.recognize import recognize
 from brain.commands import execute_action
+from utils.app_finder import ensure_app_index
 from utils.normalize import normalize_text
 
 WAKE_WORDS = ["edit", "едіт", "едит"]
@@ -18,6 +19,9 @@ def is_active():
 
 def main():
   global last_activation_time
+
+  index_source, app_count = ensure_app_index()
+  print(f"[index:{index_source}] loaded {app_count} app entries")
 
   while True:
     audio_file = listen()

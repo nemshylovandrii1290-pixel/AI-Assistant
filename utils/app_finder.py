@@ -22,6 +22,7 @@ APP_CACHE = []
 CACHE_READY = False
 CACHE_DIR = os.path.join(os.getcwd(), ".cache")
 APP_CACHE_FILE = os.path.join(CACHE_DIR, "app_index.json")
+LAST_CACHE_SOURCE = "none"
 BAD_EXECUTABLE_TOKENS = {
     "crash", "helper", "service", "setup", "uninstall", "update", "updater",
     "diagnostics", "report", "redist", "redistributable", "vc_redist", "7z",
@@ -154,7 +155,7 @@ def _is_cache_valid():
 
 
 def _load_cache_from_disk():
-    global APP_CACHE, CACHE_READY
+    global APP_CACHE, CACHE_READY, LAST_CACHE_SOURCE
 
     if not _is_cache_valid():
         return False
@@ -167,6 +168,7 @@ def _load_cache_from_disk():
 
     APP_CACHE = [_deserialize_entry(entry) for entry in data]
     CACHE_READY = True
+    LAST_CACHE_SOURCE = "disk"
     return True
 
 
@@ -180,14 +182,12 @@ def _save_cache_to_disk():
             ensure_ascii=False
         )
 
-def build_cache():
-    global CACHE_READY
 
-    if CACHE_READY:
-        return
+def _rebuild_cache():
+    global APP_CACHE, CACHE_READY, LAST_CACHE_SOURCE
 
-    if _load_cache_from_disk():
-        return
+    APP_CACHE = []
+    CACHE_READY = False
 
     for base in SEARCH_PATHS:
         if not base or not os.path.exists(base):
@@ -205,12 +205,30 @@ def build_cache():
 
     _save_cache_to_disk()
     CACHE_READY = True
+    LAST_CACHE_SOURCE = "rebuilt"
+
+
+def ensure_app_index(force_refresh=False):
+    global CACHE_READY
+
+    if force_refresh:
+        _rebuild_cache()
+        return LAST_CACHE_SOURCE, len(APP_CACHE)
+
+    if CACHE_READY:
+        return "memory", len(APP_CACHE)
+
+    if _load_cache_from_disk():
+        return LAST_CACHE_SOURCE, len(APP_CACHE)
+
+    _rebuild_cache()
+    return LAST_CACHE_SOURCE, len(APP_CACHE)
 
 
 def find_app(app_name):
     app_name = normalize_text(app_name.lower()).strip()
 
-    build_cache()
+    ensure_app_index()
 
     if not app_name:
         return None
