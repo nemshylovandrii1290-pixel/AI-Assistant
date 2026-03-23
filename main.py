@@ -6,6 +6,7 @@ from brain.ai import ask_ai
 from voice.recognize import recognize
 from brain.commands import execute_action
 from utils.app_finder import ensure_app_index
+from utils.intent_parser import extract_open_target
 from utils.normalize import normalize_text
 
 WAKE_WORDS = ["edit", "едіт", "едит"]
@@ -59,6 +60,13 @@ def main():
       text = text_lower
 
     text = normalize_text(text)
+
+    direct_open_target = extract_open_target(text)
+    if direct_open_target:
+      result = execute_action("open_app", {"app": direct_open_target})
+      speak(result)
+      continue
+
     ai_result = ask_ai(text)
     result_type = ai_result.get("type")
 

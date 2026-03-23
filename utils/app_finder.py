@@ -26,7 +26,8 @@ LAST_CACHE_SOURCE = "none"
 BAD_EXECUTABLE_TOKENS = {
     "crash", "helper", "service", "setup", "uninstall", "update", "updater",
     "diagnostics", "report", "redist", "redistributable", "vc_redist", "7z",
-    "installer", "install", "telemetry"
+    "installer", "install", "telemetry", "test", "ffmpeg", "browser",
+    "page", "qsv", "nvenc", "amf", "vobsub", "directvobsub"
 }
 
 
@@ -44,15 +45,31 @@ def _iter_app_files(base):
 
 def _name_variants(file_name, root):
     base_name, _ = os.path.splitext(file_name)
+    split_base_name = re.sub(r"(?<=[a-zа-яіїєґ])(?=[A-ZА-ЯІЇЄҐ0-9])", " ", base_name)
+    normalized_split_base_name = normalize_text(split_base_name.lower())
+    compact_base_name = re.sub(r"[^a-z0-9а-яіїєґ]+", " ", normalized_split_base_name).strip()
+
     variants = {
         normalize_text(file_name.lower()),
         normalize_text(base_name.lower()),
+        normalized_split_base_name,
+        compact_base_name,
     }
 
-    parent = os.path.basename(root).lower()
-    if parent:
-        variants.add(normalize_text(parent))
-        variants.add(normalize_text(f"{parent} {base_name.lower()}"))
+    current_root = root
+    for _ in range(3):
+        parent = os.path.basename(current_root).lower()
+        if not parent:
+            break
+
+        normalized_parent = normalize_text(parent)
+        compact_parent = re.sub(r"[^a-z0-9а-яіїєґ]+", " ", normalized_parent).strip()
+
+        variants.add(normalized_parent)
+        variants.add(compact_parent)
+        variants.add(normalize_text(f"{normalized_parent} {normalized_split_base_name}"))
+
+        current_root = os.path.dirname(current_root)
 
     return {variant.strip() for variant in variants if variant.strip()}
 
@@ -76,6 +93,8 @@ def _score_match(query, entry):
     base_name = entry["base_name"]
     parent_name = entry["parent_name"]
     names = entry["names"]
+    base_tokens = _tokens(base_name)
+    parent_tokens = _tokens(parent_name)
     score = 0.0
 
     if query in names:
@@ -87,15 +106,20 @@ def _score_match(query, entry):
     if parent_name and query == parent_name:
         score = max(score, 0.82)
 
-    if query in base_name or base_name in query:
+    if len(query) >= 4 and len(base_name) >= 4 and (query in base_name or base_name in query):
         score = max(score, 0.96)
 
-    if parent_name and (query in parent_name or parent_name in query):
+    if parent_name and len(query) >= 4 and len(parent_name) >= 4 and (query in parent_name or parent_name in query):
         score = max(score, 0.78)
 
     if query_tokens:
-        overlap = sum(1 for token in query_tokens if token in base_name or token in parent_name)
+        overlap = sum(1 for token in query_tokens if token in base_tokens or token in parent_tokens)
         score = max(score, overlap / len(query_tokens))
+
+        for variant in names:
+            variant_tokens = _tokens(variant)
+            if query_tokens and all(token in variant_tokens for token in query_tokens):
+                score = max(score, 0.99 if entry["ext"] in {".lnk", ".url"} else 0.95)
 
     score = max(score, SequenceMatcher(None, query, base_name).ratio() * 0.95)
 
@@ -241,19 +265,20 @@ def find_app(app_name):
         if entry["ext"] in {".lnk", ".url"} and app_name in entry["names"]:
             return entry["path"]
 
-    try:
-        exe_name = app_name if app_name.endswith(".exe") else f"{app_name}.exe"
-        where_result = subprocess.run(
-            ["where", exe_name],
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        first_path = where_result.stdout.strip().splitlines()
-        if first_path:
-            return first_path[0]
-    except OSError:
-        pass
+    if " " not in app_name:
+        try:
+            exe_name = app_name if app_name.endswith(".exe") else f"{app_name}.exe"
+            where_result = subprocess.run(
+                ["where", exe_name],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            first_path = where_result.stdout.strip().splitlines()
+            if first_path:
+                return first_path[0]
+        except OSError:
+            pass
 
     best_score = 0.0
     best_path = None

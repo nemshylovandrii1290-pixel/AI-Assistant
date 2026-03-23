@@ -59,4 +59,15 @@ def try_special_case_launch(app_name):
         webbrowser.open("https://instagram.com")
         return True
 
+    if app_name in ["hoyolab"]:
+        webbrowser.open("https://www.hoyolab.com")
+        return True
+
+    if app_name in ["microsoft store", "store", "майкрософт стор"]:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command", 'Start-Process "ms-windows-store:"'],
+            check=False
+        )
+        return True
+
     return False
