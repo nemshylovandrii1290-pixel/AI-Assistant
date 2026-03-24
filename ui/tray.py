@@ -1,4 +1,5 @@
 import os
+import sys
 import threading
 
 from PIL import Image, ImageDraw
@@ -42,7 +43,8 @@ def run_tray(service):
         import pystray
     except ImportError as error:
         raise RuntimeError(
-            "pystray is not installed. Install dependencies from requirements.txt to use tray mode."
+            f"pystray is not installed for this Python: {sys.executable}. "
+            "Install dependencies in the active environment to use tray mode."
         ) from error
 
     menu = pystray.Menu(
