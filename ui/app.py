@@ -1,18 +1,21 @@
-import threading
-
-from main import main as run_assistant
+from ui.service import AssistantService
+from ui.startup import ensure_startup_entry
 from ui.tray import run_tray
+from utils.config import AUTO_INSTALL_STARTUP
 
 
-def start_assistant_loop():
-    worker = threading.Thread(target=run_assistant, name="assistant-loop", daemon=True)
-    worker.start()
-    return worker
+SERVICE = AssistantService()
 
 
 def main():
-    start_assistant_loop()
-    run_tray()
+    if AUTO_INSTALL_STARTUP:
+        try:
+            ensure_startup_entry()
+        except OSError as error:
+            print(f"Startup install error: {error}")
+
+    SERVICE.start()
+    run_tray(SERVICE)
 
 
 if __name__ == "__main__":

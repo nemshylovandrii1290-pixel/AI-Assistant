@@ -14,16 +14,30 @@ def _build_icon_image():
     return image
 
 
-def open_window_thread():
-    threading.Thread(target=open_window, name="assistant-window", daemon=True).start()
+def _open_window_thread(service):
+    threading.Thread(
+        target=open_window,
+        args=(service,),
+        name="assistant-window",
+        daemon=True,
+    ).start()
 
 
-def exit_app(icon, item):
+def _toggle_service(icon, service):
+    if service.is_running():
+        service.stop()
+    else:
+        service.start()
+    icon.update_menu()
+
+
+def _exit_app(icon, item, service):
+    service.stop()
     icon.stop()
     os._exit(0)
 
 
-def run_tray():
+def run_tray(service):
     try:
         import pystray
     except ImportError as error:
@@ -32,8 +46,12 @@ def run_tray():
         ) from error
 
     menu = pystray.Menu(
-        pystray.MenuItem("Відкрити", lambda icon, item: open_window_thread()),
-        pystray.MenuItem("Вийти", exit_app),
+        pystray.MenuItem("Показати", lambda icon, item: _open_window_thread(service)),
+        pystray.MenuItem(
+            lambda item: "Стоп" if service.is_running() else "Старт",
+            lambda icon, item: _toggle_service(icon, service),
+        ),
+        pystray.MenuItem("Вийти", lambda icon, item: _exit_app(icon, item, service)),
     )
 
     icon = pystray.Icon("assistant", _build_icon_image(), "AI Assistant", menu)

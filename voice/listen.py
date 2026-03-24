@@ -16,7 +16,7 @@ from utils.config import (
 )
 
 
-def listen(duration=LISTEN_DURATION):
+def listen(duration=LISTEN_DURATION, stop_event=None, quiet=False):
     samplerate = SAMPLE_RATE
     chunk_size = int(samplerate * CHUNK_DURATION)
     max_chunks = max(1, int(duration / CHUNK_DURATION))
@@ -29,7 +29,8 @@ def listen(duration=LISTEN_DURATION):
     started = False
     silence_chunks = 0
 
-    print("Listening...")
+    if not quiet:
+        print("Listening...")
 
     with sd.InputStream(
         samplerate=samplerate,
@@ -38,6 +39,9 @@ def listen(duration=LISTEN_DURATION):
         blocksize=chunk_size,
     ) as stream:
         for _ in range(max_chunks):
+            if stop_event and stop_event.is_set():
+                return None
+
             chunk, _ = stream.read(chunk_size)
             chunk_copy = chunk.copy()
             volume = float(np.abs(chunk_copy).mean())
@@ -46,7 +50,10 @@ def listen(duration=LISTEN_DURATION):
                 recent_chunks.append(chunk_copy)
                 ambient_levels.append(volume)
 
-            ambient_level = max(SPEECH_THRESHOLD, int(np.median(ambient_levels) * DYNAMIC_THRESHOLD_MULTIPLIER))
+            ambient_level = max(
+                SPEECH_THRESHOLD,
+                int(np.median(ambient_levels) * DYNAMIC_THRESHOLD_MULTIPLIER),
+            )
 
             if volume >= ambient_level:
                 if not started:
