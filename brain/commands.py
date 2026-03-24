@@ -72,3 +72,27 @@ def execute_action(action, data=None):
         return command["response"]
 
     return "Не знаю, як виконати цю команду"
+
+
+def execute_actions(actions):
+    if not actions:
+        return "Немає дій для виконання."
+
+    responses = []
+
+    for action in actions:
+        action_type = action.get("type")
+
+        if action_type == "open_app":
+            responses.append(execute_action("open_app", {"app": action.get("app", "")}))
+            continue
+
+        if action_type == "command":
+            responses.append(execute_action(action.get("action"), action))
+            continue
+
+    successful_responses = [response for response in responses if response]
+    if successful_responses:
+        return successful_responses[-1]
+
+    return "Не вдалося виконати сценарій."

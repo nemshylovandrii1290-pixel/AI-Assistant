@@ -1,9 +1,12 @@
 import time
 
 from brain.ai import ask_ai
-from brain.commands import execute_action
+from brain.commands import execute_action, execute_actions
 from utils.app_finder import ensure_app_index
+from utils.context import get_runtime_context
 from utils.intent_parser import extract_open_target
+from utils.intent_router import resolve_local_intent
+from utils.memory import remember_app_launch, remember_phrase_actions
 from utils.normalize import normalize_text
 from voice.listen import listen
 from voice.recognize import recognize
@@ -47,6 +50,7 @@ def main():
         direct_open_target = extract_open_target(text_lower)
         if direct_open_target:
             result = execute_action("open_app", {"app": direct_open_target})
+            remember_app_launch(direct_open_target)
             speak(result)
             continue
 
@@ -62,11 +66,21 @@ def main():
         if not is_active():
             continue
 
+        context = get_runtime_context()
+        local_intent = resolve_local_intent(text_lower, context)
+        if local_intent:
+            result = execute_actions(local_intent.get("actions", []))
+            remember_phrase_actions(text_lower, local_intent.get("actions", []))
+            speak(local_intent.get("response") or result)
+            continue
+
         ai_result = ask_ai(text_lower)
         result_type = ai_result.get("type")
 
         if result_type == "command":
             result = execute_action(ai_result.get("action"), ai_result)
+            if ai_result.get("action") == "open_app" and ai_result.get("app"):
+                remember_app_launch(ai_result["app"])
             speak(result)
             continue
 
