@@ -15,7 +15,7 @@ from voice.speak import speak
 
 
 WAKE_WORDS = ["edit", "едіт", "едит"]
-STOP_WORDS = ["стоп", "вистачить"]
+STOP_WORDS = ["стоп", "вистачить", "stop", "stop stop"]
 ACTIVE_TIMEOUT = 300
 last_activation_time = 0
 
@@ -95,8 +95,9 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
 
             result = execute_actions(local_intent.get("actions", []))
             remember_phrase_actions(text_lower, local_intent.get("actions", []))
-            speak(local_intent.get("response") or result)
-            _emit(status_callback, "action", local_intent.get("response") or result)
+            response = local_intent.get("response") or result
+            speak(response)
+            _emit(status_callback, "action", response)
             continue
 
         ai_result = ask_ai(text_lower)

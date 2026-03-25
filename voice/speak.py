@@ -1,16 +1,30 @@
+import pyttsx3
 import sounddevice as sd
 import torch
 
-import pyttsx3
 
-
-_MODEL = None
 _ENGINE = None
+_MODEL = None
 _SPEAKER = "v4_ua"
 _SAMPLE_RATE = 48000
 
 
-def _get_model():
+def _get_engine():
+    global _ENGINE
+
+    if _ENGINE is None:
+        _ENGINE = pyttsx3.init()
+
+    return _ENGINE
+
+
+def _speak_with_pyttsx3(text):
+    engine = _get_engine()
+    engine.say(text)
+    engine.runAndWait()
+
+
+def _get_silero_model():
     global _MODEL
 
     if _MODEL is None:
@@ -26,24 +40,18 @@ def _get_model():
     return _MODEL
 
 
-def _get_engine():
-    global _ENGINE
+def _try_silero(text):
+    audio = _get_silero_model().apply_tts(
+        text=text,
+        speaker=_SPEAKER,
+        sample_rate=_SAMPLE_RATE,
+    )
 
-    if _ENGINE is None:
-        _ENGINE = pyttsx3.init()
+    if hasattr(audio, "cpu"):
+        audio = audio.cpu().numpy()
 
-    return _ENGINE
-
-
-def _fallback_speak(text):
-    try:
-        engine = _get_engine()
-        engine.say(text)
-        engine.runAndWait()
-        return True
-    except Exception as error:
-        print(f"Fallback voice error: {error}")
-        return False
+    sd.play(audio, _SAMPLE_RATE)
+    sd.wait()
 
 
 def speak(text):
@@ -53,17 +61,10 @@ def speak(text):
     print("Асистент:", text)
 
     try:
-        audio = _get_model().apply_tts(
-            text=text,
-            speaker=_SPEAKER,
-            sample_rate=_SAMPLE_RATE,
-        )
-
-        if hasattr(audio, "cpu"):
-            audio = audio.cpu().numpy()
-
-        sd.play(audio, _SAMPLE_RATE)
-        sd.wait()
+        _speak_with_pyttsx3(text)
     except Exception as error:
-        print(f"Voice playback error: {error}")
-        _fallback_speak(text)
+        print(f"Fallback voice error: {error}")
+        try:
+            _try_silero(text)
+        except Exception as silero_error:
+            print(f"Voice playback error: {silero_error}")

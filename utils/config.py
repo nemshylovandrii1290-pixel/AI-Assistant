@@ -13,6 +13,11 @@ RECOGNITION_LANGUAGES = [
     for language in os.getenv("RECOGNITION_LANGUAGES", "uk-UA,ru-RU,en-US").split(",")
     if language.strip()
 ]
+WHISPER_LANGUAGES = [
+    language.strip()
+    for language in os.getenv("WHISPER_LANGUAGES", "uk,ru,en").split(",")
+    if language.strip()
+]
 SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "16000"))
 LISTEN_DURATION = float(os.getenv("LISTEN_DURATION", "12"))
 IDLE_LISTEN_DURATION = float(os.getenv("IDLE_LISTEN_DURATION", "3.2"))

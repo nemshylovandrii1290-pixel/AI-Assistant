@@ -4,6 +4,8 @@ import wave
 
 from faster_whisper import WhisperModel
 
+from utils.config import WHISPER_LANGUAGES
+
 
 _MODEL = None
 
@@ -11,7 +13,7 @@ _MODEL = None
 def _get_model():
     global _MODEL
     if _MODEL is None:
-        _MODEL = WhisperModel("base", device="cpu", compute_type="int8")
+        _MODEL = WhisperModel("small", device="cpu", compute_type="int8")
     return _MODEL
 
 
@@ -28,6 +30,44 @@ def _write_temp_wav(audio_data, samplerate):
     return temp_file.name
 
 
+def _transcribe_once(audio_path, language):
+    segments, info = _get_model().transcribe(
+        audio_path,
+        language=language,
+        beam_size=1,
+        temperature=0.0,
+        condition_on_previous_text=False,
+        vad_filter=True,
+    )
+    text = " ".join(segment.text.strip() for segment in segments).strip()
+    probability = getattr(info, "language_probability", 0.0) or 0.0
+    return text, probability
+
+
+def _pick_best_transcript(audio_path):
+    best_text = ""
+    best_language = None
+    best_score = -1.0
+
+    for language in WHISPER_LANGUAGES:
+        text, probability = _transcribe_once(audio_path, language)
+        if not text:
+            continue
+
+        score = len(text) + probability * 5
+        if any(word in text.lower() for word in ("edit", "едіт", "едит", "stop", "стоп")):
+            score += 20
+
+        if score > best_score:
+            best_text = text
+            best_language = language
+            best_score = score
+
+    if best_text:
+        print(f"[speech:{best_language}] recognized")
+    return best_text
+
+
 def recognize(audio_data, samplerate=16000):
     if audio_data is None:
         return ""
@@ -40,12 +80,7 @@ def recognize(audio_data, samplerate=16000):
         remove_after = True
 
     try:
-        segments, info = _get_model().transcribe(audio_path, beam_size=1)
-        text = " ".join(segment.text.strip() for segment in segments).strip()
-        if text:
-            detected_language = getattr(info, "language", "unknown")
-            print(f"[speech:{detected_language}] recognized")
-        return text
+        return _pick_best_transcript(audio_path)
     finally:
         if remove_after and os.path.exists(audio_path):
             os.remove(audio_path)
