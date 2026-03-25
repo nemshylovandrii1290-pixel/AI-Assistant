@@ -1,3 +1,5 @@
+import numpy as np
+
 from faster_whisper import WhisperModel
 
 from utils.config import WHISPER_LANGUAGES
@@ -64,6 +66,6 @@ def recognize(audio_data, samplerate=16000):
     if isinstance(audio_data, str):
         audio_input = audio_data
     else:
-        audio_input = audio_data.astype("float32") / 32768.0
+        audio_input = np.asarray(audio_data).reshape(-1).astype("float32") / 32768.0
 
     return _pick_best_transcript(audio_input)

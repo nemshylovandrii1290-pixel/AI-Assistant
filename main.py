@@ -45,7 +45,12 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
         if stop_event and stop_event.is_set():
             break
 
-        text = recognize(audio_data)
+        try:
+            text = recognize(audio_data)
+        except Exception as error:
+            print(f"Recognition error: {error}")
+            _emit(status_callback, "error", f"Recognition error: {error}")
+            continue
         if not text:
             _emit(status_callback, "listening", "Очікую активаційну команду")
             continue
