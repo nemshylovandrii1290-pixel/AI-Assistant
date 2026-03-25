@@ -1,51 +1,51 @@
-import io
+import os
+import tempfile
 import wave
 
-import speech_recognition as sr
-
-from utils.config import RECOGNITION_LANGUAGES
+from faster_whisper import WhisperModel
 
 
-def _recognize_with_languages(recognizer, audio):
-    request_error = None
+_MODEL = None
 
-    for language in RECOGNITION_LANGUAGES:
-        try:
-            text = recognizer.recognize_google(audio, language=language)
-            if text:
-                print(f"[speech:{language}] recognized")
-                return text
-        except sr.UnknownValueError:
-            continue
-        except sr.RequestError as error:
-            request_error = error
 
-    if request_error:
-        print("Помилка сервісу:", request_error)
+def _get_model():
+    global _MODEL
+    if _MODEL is None:
+        _MODEL = WhisperModel("base", device="cpu", compute_type="int8")
+    return _MODEL
 
-    return ""
+
+def _write_temp_wav(audio_data, samplerate):
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+    temp_file.close()
+
+    with wave.open(temp_file.name, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(samplerate)
+        wav_file.writeframes(audio_data.tobytes())
+
+    return temp_file.name
 
 
 def recognize(audio_data, samplerate=16000):
     if audio_data is None:
         return ""
 
-    recognizer = sr.Recognizer()
-
     if isinstance(audio_data, str):
-        with sr.AudioFile(audio_data) as source:
-            audio = recognizer.record(source)
-            return _recognize_with_languages(recognizer, audio)
+        audio_path = audio_data
+        remove_after = False
+    else:
+        audio_path = _write_temp_wav(audio_data, samplerate)
+        remove_after = True
 
-    wav_buffer = io.BytesIO()
-    with wave.open(wav_buffer, "wb") as wav_file:
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(samplerate)
-        wav_file.writeframes(audio_data.tobytes())
-
-    wav_buffer.seek(0)
-
-    with sr.AudioFile(wav_buffer) as source:
-        audio = recognizer.record(source)
-        return _recognize_with_languages(recognizer, audio)
+    try:
+        segments, info = _get_model().transcribe(audio_path, beam_size=1)
+        text = " ".join(segment.text.strip() for segment in segments).strip()
+        if text:
+            detected_language = getattr(info, "language", "unknown")
+            print(f"[speech:{detected_language}] recognized")
+        return text
+    finally:
+        if remove_after and os.path.exists(audio_path):
+            os.remove(audio_path)
