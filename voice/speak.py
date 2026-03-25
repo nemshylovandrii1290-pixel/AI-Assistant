@@ -4,7 +4,8 @@ import torch
 
 
 _MODEL = None
-_SPEAKER = "v4_ua"
+_MODEL_SPEAKER = "v4_ua"
+_VOICE_SPEAKER = "mykyta"
 _SAMPLE_RATE = 48000
 
 
@@ -23,7 +24,7 @@ def _get_silero_model():
             repo_or_dir="snakers4/silero-models",
             model="silero_tts",
             language="ua",
-            speaker=_SPEAKER,
+            speaker=_MODEL_SPEAKER,
         )
         _MODEL = model
 
@@ -33,7 +34,7 @@ def _get_silero_model():
 def _try_silero(text):
     audio = _get_silero_model().apply_tts(
         text=text,
-        speaker=_SPEAKER,
+        speaker=_VOICE_SPEAKER,
         sample_rate=_SAMPLE_RATE,
     )
 

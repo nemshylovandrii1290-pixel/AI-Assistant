@@ -22,10 +22,11 @@ def contains_phrase(text, phrases, threshold=85):
         ):
             return True
 
-        if fuzz.partial_ratio(normalized_text, normalized_phrase) >= threshold:
-            return True
+        if len(phrase_words) <= 1:
+            if fuzz.partial_ratio(normalized_text, normalized_phrase) >= threshold:
+                return True
 
-        if fuzz.partial_ratio(normalized_phrase, normalized_text) >= threshold:
-            return True
+            if fuzz.partial_ratio(normalized_phrase, normalized_text) >= threshold:
+                return True
 
     return False

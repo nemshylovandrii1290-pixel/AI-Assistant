@@ -30,6 +30,20 @@ def _emit(status_callback, status, message=""):
         status_callback(status, message)
 
 
+def _handle_local_intent(local_intent, text_lower, status_callback):
+    if local_intent.get("type") == "chat":
+        response = local_intent.get("response", "Не зрозумів запит.")
+        speak(response)
+        _emit(status_callback, "chat", response)
+        return
+
+    result = execute_actions(local_intent.get("actions", []))
+    remember_phrase_actions(text_lower, local_intent.get("actions", []))
+    response = local_intent.get("response") or result
+    speak(response)
+    _emit(status_callback, "action", response)
+
+
 def run_assistant(stop_event=None, quiet=False, status_callback=None):
     global last_activation_time
 
@@ -51,6 +65,7 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             print(f"Recognition error: {error}")
             _emit(status_callback, "error", f"Recognition error: {error}")
             continue
+
         if not text:
             _emit(status_callback, "listening", "Очікую активаційну команду")
             continue
@@ -68,8 +83,15 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             _emit(status_callback, "stopped", "Асистент зупинений")
             return
 
+        context = get_runtime_context()
+
         direct_open_target = extract_open_target(text_lower)
         if direct_open_target:
+            direct_local_intent = resolve_local_intent(direct_open_target, context)
+            if direct_local_intent:
+                _handle_local_intent(direct_local_intent, direct_open_target, status_callback)
+                continue
+
             result = execute_action("open_app", {"app": direct_open_target})
             remember_app_launch(direct_open_target)
             speak(result)
@@ -90,20 +112,9 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             _emit(status_callback, "listening", "Працює у фоновому режимі")
             continue
 
-        context = get_runtime_context()
         local_intent = resolve_local_intent(text_lower, context)
         if local_intent:
-            if local_intent.get("type") == "chat":
-                response = local_intent.get("response", "Не зрозумів запит.")
-                speak(response)
-                _emit(status_callback, "chat", response)
-                continue
-
-            result = execute_actions(local_intent.get("actions", []))
-            remember_phrase_actions(text_lower, local_intent.get("actions", []))
-            response = local_intent.get("response") or result
-            speak(response)
-            _emit(status_callback, "action", response)
+            _handle_local_intent(local_intent, text_lower, status_callback)
             continue
 
         ai_result = ask_ai(text_lower, context=context)

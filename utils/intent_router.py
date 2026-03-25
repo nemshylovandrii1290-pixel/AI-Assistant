@@ -10,8 +10,22 @@ from utils.scenario_config import (
 )
 
 
+DISABLE_WORDS = (
+    "вимкни",
+    "выключи",
+    "виключи",
+    "зупини",
+    "stop",
+    "disable",
+)
+
+
 def _contains_trigger(text, triggers):
     return contains_phrase(text, triggers)
+
+
+def _is_disable_request(text):
+    return any(word in text for word in DISABLE_WORDS)
 
 
 def _clone_actions(actions):
@@ -74,13 +88,23 @@ def resolve_local_intent(text, context):
         "work": "робочого",
     }
 
-    for scenario_name, triggers in DISABLE_SCENARIO_TRIGGERS.items():
-        if _contains_trigger(normalized_text, triggers):
-            return {
-                "type": "chat",
-                "source": "scenario",
-                "response": f"Вимкнення {scenario_labels.get(scenario_name, scenario_name)} режиму поки не підтримується.",
-            }
+    if _is_disable_request(normalized_text):
+        for scenario_name, triggers in DISABLE_SCENARIO_TRIGGERS.items():
+            if _contains_trigger(normalized_text, triggers):
+                return {
+                    "type": "chat",
+                    "source": "scenario",
+                    "response": f"Вимкнення {scenario_labels.get(scenario_name, scenario_name)} режиму поки не підтримується.",
+                }
+
+    if _contains_trigger(normalized_text, SCENARIOS["gaming"]["triggers"]):
+        return _build_static_scenario("gaming")
+
+    if _contains_trigger(normalized_text, SCENARIOS["work"]["triggers"]):
+        return _build_work_actions()
+
+    if _contains_trigger(normalized_text, MUSIC_TRIGGERS):
+        return _build_music_actions(context)
 
     learned_actions = get_learned_actions(normalized_text)
     if learned_actions:
@@ -90,14 +114,5 @@ def resolve_local_intent(text, context):
             "response": "Запускаю те, що ти зазвичай відкриваєш для цього запиту.",
             "actions": learned_actions,
         }
-
-    if _contains_trigger(normalized_text, MUSIC_TRIGGERS):
-        return _build_music_actions(context)
-
-    if _contains_trigger(normalized_text, SCENARIOS["gaming"]["triggers"]):
-        return _build_static_scenario("gaming")
-
-    if _contains_trigger(normalized_text, SCENARIOS["work"]["triggers"]):
-        return _build_work_actions()
 
     return None
