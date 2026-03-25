@@ -3,23 +3,13 @@ import sounddevice as sd
 import torch
 
 
-_ENGINE = None
 _MODEL = None
 _SPEAKER = "v4_ua"
 _SAMPLE_RATE = 48000
 
 
-def _get_engine():
-    global _ENGINE
-
-    if _ENGINE is None:
-        _ENGINE = pyttsx3.init()
-
-    return _ENGINE
-
-
 def _speak_with_pyttsx3(text):
-    engine = _get_engine()
+    engine = pyttsx3.init()
     engine.say(text)
     engine.runAndWait()
 

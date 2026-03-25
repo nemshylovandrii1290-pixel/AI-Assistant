@@ -35,9 +35,11 @@ def _transcribe_once(audio_path, language):
         audio_path,
         language=language,
         beam_size=1,
+        best_of=2,
         temperature=0.0,
         condition_on_previous_text=False,
         vad_filter=True,
+        initial_prompt="edit едіт едит стоп вистачить увімкни ігровий режим робочий режим відкрий",
     )
     text = " ".join(segment.text.strip() for segment in segments).strip()
     probability = getattr(info, "language_probability", 0.0) or 0.0
@@ -55,8 +57,11 @@ def _pick_best_transcript(audio_path):
             continue
 
         score = len(text) + probability * 5
-        if any(word in text.lower() for word in ("edit", "едіт", "едит", "stop", "стоп")):
+        lowered = text.lower()
+        if any(word in lowered for word in ("edit", "едіт", "едит", "stop", "стоп", "увімкни", "вимкни", "відкрий")):
             score += 20
+        if language == "uk" and any(word in lowered for word in ("увімкни", "вимкни", "відкрий", "ігровий", "робочий")):
+            score += 8
 
         if score > best_score:
             best_text = text

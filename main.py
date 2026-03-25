@@ -9,6 +9,7 @@ from utils.intent_parser import extract_open_target
 from utils.intent_router import resolve_local_intent
 from utils.memory import remember_app_launch, remember_phrase_actions
 from utils.normalize import normalize_text
+from utils.phrase_match import contains_phrase
 from voice.listen import listen
 from voice.recognize import recognize
 from voice.speak import speak
@@ -56,7 +57,7 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             print("Ти сказав:", original_text)
         _emit(status_callback, "heard", original_text)
 
-        if any(stop_word in text_lower for stop_word in STOP_WORDS):
+        if contains_phrase(text_lower, STOP_WORDS):
             last_activation_time = 0
             speak("Окей, вимикаюсь")
             _emit(status_callback, "stopped", "Асистент зупинений")
@@ -70,7 +71,7 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             _emit(status_callback, "action", result)
             continue
 
-        if any(wake_word in text_lower for wake_word in WAKE_WORDS):
+        if contains_phrase(text_lower, WAKE_WORDS):
             last_activation_time = time.time()
             for wake_word in WAKE_WORDS:
                 text_lower = text_lower.replace(wake_word, "").strip()

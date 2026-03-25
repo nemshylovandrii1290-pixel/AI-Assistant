@@ -1,6 +1,7 @@
 from utils.app_finder import find_app
 from utils.memory import get_learned_actions
 from utils.normalize import normalize_text
+from utils.phrase_match import contains_phrase
 from utils.scenario_config import (
     DISABLE_SCENARIO_TRIGGERS,
     MUSIC_TRIGGERS,
@@ -10,7 +11,7 @@ from utils.scenario_config import (
 
 
 def _contains_trigger(text, triggers):
-    return any(trigger in text for trigger in triggers)
+    return contains_phrase(text, triggers)
 
 
 def _clone_actions(actions):
