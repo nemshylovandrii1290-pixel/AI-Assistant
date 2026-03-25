@@ -30,6 +30,16 @@ def _emit(status_callback, status, message=""):
         status_callback(status, message)
 
 
+def _contains_stop_command(text):
+    normalized = normalize_text(text).lower().strip()
+    tokens = normalized.split()
+
+    if "стоп" in tokens or "вистачить" in tokens or "stop" in tokens:
+        return True
+
+    return normalized in {"stop stop", "стоп стоп"}
+
+
 def _handle_local_intent(local_intent, text_lower, status_callback):
     if local_intent.get("type") == "chat":
         response = local_intent.get("response", "Не зрозумів запит.")
@@ -77,7 +87,7 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             print("Ти сказав:", original_text)
         _emit(status_callback, "heard", original_text)
 
-        if contains_phrase(text_lower, STOP_WORDS):
+        if _contains_stop_command(text_lower):
             last_activation_time = 0
             speak("Окей, вимикаюсь")
             _emit(status_callback, "stopped", "Асистент зупинений")

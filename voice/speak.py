@@ -8,6 +8,20 @@ _MODEL_SPEAKER = "v4_ua"
 _VOICE_SPEAKER = "mykyta"
 _SAMPLE_RATE = 48000
 
+TTS_ALIASES = [
+    ("github desktop", "гітхаб десктоп"),
+    ("github", "гітхаб"),
+    ("microsoft store", "майкрософт стор"),
+    ("sublime text", "саблайм текст"),
+    ("youtube music", "ютуб м'юзік"),
+    ("youtube", "ютуб"),
+    ("telegram", "телеграм"),
+    ("discord", "діскорд"),
+    ("steam", "стім"),
+    ("chatgpt", "чат джіпіті"),
+    ("microsoft", "майкрософт"),
+]
+
 
 def _speak_with_pyttsx3(text):
     engine = pyttsx3.init()
@@ -45,17 +59,27 @@ def _try_silero(text):
     sd.wait()
 
 
+def _prepare_tts_text(text):
+    spoken = text
+    for source, target in TTS_ALIASES:
+        spoken = spoken.replace(source, target)
+        spoken = spoken.replace(source.title(), target)
+        spoken = spoken.replace(source.upper(), target)
+    return spoken
+
+
 def speak(text):
     if not text:
         return
 
     print("Асистент:", text)
+    spoken_text = _prepare_tts_text(text)
 
     try:
-        _try_silero(text)
+        _try_silero(spoken_text)
     except Exception as error:
         print(f"Silero error: {error}")
         try:
-            _speak_with_pyttsx3(text)
+            _speak_with_pyttsx3(spoken_text)
         except Exception as fallback_error:
             print(f"Voice error: {fallback_error}")

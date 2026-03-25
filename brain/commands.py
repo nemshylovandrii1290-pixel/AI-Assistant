@@ -9,13 +9,30 @@ from utils.normalize import normalize_text
 from utils.special_launchers import try_special_case_launch
 
 
+SPECIAL_APP_COMMANDS = {
+    "github": "open_github",
+}
+
+
 def _open_path(path):
     try:
         os.startfile(path)
         return True
     except OSError:
-        result = subprocess.run(["cmd", "/c", "start", "", path], check=False)
-        return result.returncode == 0
+        if path.lower().endswith((".lnk", ".url")):
+            explorer_result = subprocess.run(["explorer", path], check=False)
+            if explorer_result.returncode == 0:
+                return True
+
+        powershell_result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", f'Start-Process -FilePath "{path}"'],
+            check=False,
+        )
+        if powershell_result.returncode == 0:
+            return True
+
+        cmd_result = subprocess.run(["cmd", "/c", "start", "", path], check=False)
+        return cmd_result.returncode == 0
 
 
 def _log_stage(stage, message):
@@ -45,8 +62,9 @@ def execute_action(action, data=None):
         if not app_name:
             return "Не зрозумів, який саме додаток потрібно відкрити."
 
-        if _try_system_launch(app_name):
-            return f"Відкриваю {app_name}"
+        redirected_action = SPECIAL_APP_COMMANDS.get(app_name)
+        if redirected_action:
+            return execute_action(redirected_action, data)
 
         path = find_app(app_name)
         if path and _open_path(path):
@@ -55,6 +73,9 @@ def execute_action(action, data=None):
 
         if try_special_case_launch(app_name):
             _log_stage("special", f"resolved '{app_name}' via special launcher")
+            return f"Відкриваю {app_name}"
+
+        if _try_system_launch(app_name):
             return f"Відкриваю {app_name}"
 
         _log_stage("failback", f"app '{app_name}' not found")
