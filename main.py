@@ -1,6 +1,6 @@
 import time
 
-from brain.ai import ask_ai
+from brain.ai import ask_ai, compose_assistant_reply
 from brain.commands import execute_action, execute_actions
 from utils.app_finder import ensure_app_index
 from utils.config import ACTIVE_LISTEN_DURATION, IDLE_LISTEN_DURATION
@@ -9,14 +9,12 @@ from utils.intent_parser import extract_open_target
 from utils.intent_router import resolve_local_intent
 from utils.memory import remember_app_launch, remember_phrase_actions
 from utils.normalize import normalize_text
-from utils.phrase_match import contains_phrase
 from voice.listen import listen
 from voice.recognize import recognize
 from voice.speak import speak
 
 
 WAKE_WORDS = ["edit", "едіт", "едит"]
-STOP_WORDS = ["стоп", "вистачить", "stop", "stop stop"]
 ACTIVE_TIMEOUT = 300
 last_activation_time = 0
 
@@ -40,16 +38,38 @@ def _contains_stop_command(text):
     return normalized in {"stop stop", "стоп стоп"}
 
 
-def _handle_local_intent(local_intent, text_lower, status_callback):
+def _speak_action_reply(user_text, fallback_text, context, status_callback, action_summary=None):
+    response = compose_assistant_reply(
+        user_text=user_text,
+        fallback_text=fallback_text,
+        context=context,
+        action_summary=action_summary,
+    )
+    speak(response)
+    _emit(status_callback, "action", response)
+
+
+def _handle_local_intent(local_intent, text_lower, context, status_callback):
+    fallback_response = local_intent.get("response", "Зараз зроблю.")
+
     if local_intent.get("type") == "chat":
-        response = local_intent.get("response", "Не зрозумів запит.")
+        response = compose_assistant_reply(
+            user_text=text_lower,
+            fallback_text=fallback_response,
+            context=context,
+        )
         speak(response)
         _emit(status_callback, "chat", response)
         return
 
     result = execute_actions(local_intent.get("actions", []))
     remember_phrase_actions(text_lower, local_intent.get("actions", []))
-    response = local_intent.get("response") or result
+    response = compose_assistant_reply(
+        user_text=text_lower,
+        fallback_text=fallback_response or result,
+        context=context,
+        action_summary=local_intent.get("actions", []),
+    )
     speak(response)
     _emit(status_callback, "action", response)
 
@@ -99,16 +119,21 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
         if direct_open_target:
             direct_local_intent = resolve_local_intent(direct_open_target, context)
             if direct_local_intent:
-                _handle_local_intent(direct_local_intent, direct_open_target, status_callback)
+                _handle_local_intent(direct_local_intent, direct_open_target, context, status_callback)
                 continue
 
             result = execute_action("open_app", {"app": direct_open_target})
             remember_app_launch(direct_open_target)
-            speak(result)
-            _emit(status_callback, "action", result)
+            _speak_action_reply(
+                user_text=text_lower,
+                fallback_text=result,
+                context=context,
+                status_callback=status_callback,
+                action_summary=[{"type": "open_app", "app": direct_open_target}],
+            )
             continue
 
-        if contains_phrase(text_lower, WAKE_WORDS):
+        if any(wake_word in text_lower for wake_word in WAKE_WORDS):
             last_activation_time = time.time()
             for wake_word in WAKE_WORDS:
                 text_lower = text_lower.replace(wake_word, "").strip()
@@ -124,7 +149,7 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
 
         local_intent = resolve_local_intent(text_lower, context)
         if local_intent:
-            _handle_local_intent(local_intent, text_lower, status_callback)
+            _handle_local_intent(local_intent, text_lower, context, status_callback)
             continue
 
         ai_result = ask_ai(text_lower, context=context)
@@ -134,18 +159,26 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             result = execute_action(ai_result.get("action"), ai_result)
             if ai_result.get("action") == "open_app" and ai_result.get("app"):
                 remember_app_launch(ai_result["app"])
-            speak(result)
-            _emit(status_callback, "action", result)
+
+            fallback_response = ai_result.get("response") or result
+            _speak_action_reply(
+                user_text=text_lower,
+                fallback_text=fallback_response,
+                context=context,
+                status_callback=status_callback,
+                action_summary=[ai_result],
+            )
             continue
 
         if result_type == "chat":
-            response = ai_result.get("response", "Не зрозумів запит.")
+            response = ai_result.get("response", "Щось не склалося, спробуй ще раз.")
             speak(response)
             _emit(status_callback, "chat", response)
             continue
 
-        speak("Не зрозумів запит.")
-        _emit(status_callback, "chat", "Не зрозумів запит.")
+        response = "Щось не склалося, спробуй ще раз."
+        speak(response)
+        _emit(status_callback, "chat", response)
 
     _emit(status_callback, "stopped", "Асистент зупинений")
 

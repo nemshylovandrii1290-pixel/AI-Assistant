@@ -11,6 +11,15 @@ from utils.special_launchers import try_special_case_launch
 
 SPECIAL_APP_COMMANDS = {
     "github": "open_github",
+    "google": "open_google",
+    "youtube": "open_youtube",
+}
+
+AMBIGUOUS_APP_NAMES = {
+    "adobe",
+    "google",
+    "microsoft",
+    "office",
 }
 
 
@@ -66,6 +75,9 @@ def execute_action(action, data=None):
         if redirected_action:
             return execute_action(redirected_action, data)
 
+        if app_name in AMBIGUOUS_APP_NAMES:
+            return f"Уточни, будь ласка, що саме ти хочеш відкрити під назвою {app_name}."
+
         path = find_app(app_name)
         if path and _open_path(path):
             _log_stage("index", f"resolved '{app_name}' via app index: {path}")
@@ -82,7 +94,7 @@ def execute_action(action, data=None):
         return f"Не вдалося знайти додаток {app_name}"
 
     if not command:
-        return "Не знаю такої команди"
+        return "Не знаю такої команди."
 
     if command["kind"] == "url":
         webbrowser.open(command["target"])
@@ -92,7 +104,7 @@ def execute_action(action, data=None):
         os.system(command["target"])
         return command["response"]
 
-    return "Не знаю, як виконати цю команду"
+    return "Не знаю, як виконати цю команду."
 
 
 def execute_actions(actions):

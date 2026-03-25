@@ -8,11 +8,75 @@ from utils.normalize import normalize_text
 MEMORY_DIR = os.path.join(os.getcwd(), ".cache")
 MEMORY_FILE = os.path.join(MEMORY_DIR, "assistant_memory.json")
 
+NON_TEACHABLE_PHRASES = {
+    "відкрий",
+    "open",
+    "запусти",
+    "запустить",
+    "увімкни",
+    "включи",
+    "play",
+    "stop",
+    "стоп",
+    "edit",
+}
+
+NON_TEACHABLE_PREFIXES = {
+    "відкрий",
+    "open",
+    "запусти",
+    "увімкни",
+    "включи",
+}
+
 
 def _default_memory():
     return {
         "phrase_actions": {},
         "app_launch_counts": {},
+    }
+
+
+def _is_teachable_phrase(phrase):
+    normalized_phrase = normalize_text(phrase)
+    if not normalized_phrase or normalized_phrase in NON_TEACHABLE_PHRASES:
+        return False
+
+    tokens = normalized_phrase.split()
+    if len(tokens) < 2:
+        return False
+
+    if tokens[0] in NON_TEACHABLE_PREFIXES:
+        return False
+
+    return len(normalized_phrase) >= 8
+
+
+def _sanitize_memory(data):
+    phrase_actions = {}
+    for phrase, payload in (data.get("phrase_actions") or {}).items():
+        if not _is_teachable_phrase(phrase):
+            continue
+
+        actions = payload.get("actions") or []
+        if not actions:
+            continue
+
+        phrase_actions[normalize_text(phrase)] = {
+            "actions": actions,
+            "uses": int(payload.get("uses", 0)),
+            "last_used_at": payload.get("last_used_at"),
+        }
+
+    app_counts = {}
+    for app_name, count in (data.get("app_launch_counts") or {}).items():
+        normalized_name = normalize_text(app_name)
+        if normalized_name:
+            app_counts[normalized_name] = app_counts.get(normalized_name, 0) + int(count)
+
+    return {
+        "phrase_actions": phrase_actions,
+        "app_launch_counts": app_counts,
     }
 
 
@@ -24,11 +88,8 @@ def _load_memory():
         with open(MEMORY_FILE, "r", encoding="utf-8") as memory_file:
             data = json.load(memory_file)
             if isinstance(data, dict):
-                return {
-                    "phrase_actions": data.get("phrase_actions", {}),
-                    "app_launch_counts": data.get("app_launch_counts", {}),
-                }
-    except (OSError, json.JSONDecodeError):
+                return _sanitize_memory(data)
+    except (OSError, json.JSONDecodeError, ValueError):
         pass
 
     return _default_memory()
@@ -53,7 +114,7 @@ def remember_app_launch(app_name):
 
 def remember_phrase_actions(phrase, actions):
     normalized_phrase = normalize_text(phrase)
-    if not normalized_phrase or not actions:
+    if not _is_teachable_phrase(normalized_phrase) or not actions:
         return
 
     memory = _load_memory()
@@ -69,12 +130,12 @@ def remember_phrase_actions(phrase, actions):
 
 def get_learned_actions(phrase):
     normalized_phrase = normalize_text(phrase)
-    if not normalized_phrase:
+    if not _is_teachable_phrase(normalized_phrase):
         return None
 
     memory = _load_memory()
     learned = memory["phrase_actions"].get(normalized_phrase)
-    if not learned:
+    if not learned or learned.get("uses", 0) < 2:
         return None
 
     actions = learned.get("actions") or []

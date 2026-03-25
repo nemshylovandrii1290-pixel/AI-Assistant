@@ -24,7 +24,12 @@ def _transcribe_once(audio_input, language):
         temperature=0.0,
         condition_on_previous_text=False,
         vad_filter=True,
-        initial_prompt="edit едіт едит стоп вистачить увімкни ігровий режим робочий режим відкрий telegram chatgpt sublime text",
+        initial_prompt=(
+            "edit едіт едит стоп вистачить увімкни вимкни "
+            "ігровий простір ігровий режим робочий простір робочий режим "
+            "відкрий github github desktop telegram microsoft store "
+            "chatgpt sublime text cute lock"
+        ),
     )
     text = " ".join(segment.text.strip() for segment in segments).strip()
     probability = getattr(info, "language_probability", 0.0) or 0.0
@@ -44,9 +49,28 @@ def _pick_best_transcript(audio_input):
         lowered = text.lower()
         score = len(text) + probability * 5
 
-        if any(word in lowered for word in ("edit", "едіт", "едит", "stop", "стоп", "увімкни", "вимкни", "відкрий")):
+        if any(
+            word in lowered
+            for word in (
+                "edit",
+                "едіт",
+                "едит",
+                "stop",
+                "стоп",
+                "увімкни",
+                "вимкни",
+                "відкрий",
+                "github",
+                "telegram",
+                "microsoft",
+            )
+        ):
             score += 20
-        if language == "uk" and any(word in lowered for word in ("увімкни", "вимкни", "відкрий", "ігровий", "робочий")):
+
+        if language == "uk" and any(
+            word in lowered
+            for word in ("увімкни", "вимкни", "відкрий", "ігровий", "робочий")
+        ):
             score += 8
 
         if score > best_score:

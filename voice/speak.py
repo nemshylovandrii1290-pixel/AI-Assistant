@@ -20,6 +20,7 @@ TTS_ALIASES = [
     ("steam", "стім"),
     ("chatgpt", "чат джіпіті"),
     ("microsoft", "майкрософт"),
+    ("google", "гугл"),
 ]
 
 

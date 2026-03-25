@@ -43,16 +43,10 @@ def _build_music_actions(context):
     else:
         target_app = "youtube music"
 
-    response = "Відкриваю музику."
-    if target_app == "spotify":
-        response = "Відкриваю Spotify для ігрового режиму."
-    elif target_app == "youtube music" and context.get("mode") == "work":
-        response = "Відкриваю YouTube Music для роботи."
-
     return {
         "type": "multi_action",
         "source": "context",
-        "response": response,
+        "response": "Зараз увімкну музику.",
         "actions": [{"type": "open_app", "app": target_app}],
     }
 
@@ -66,7 +60,7 @@ def _build_work_actions():
         "type": "multi_action",
         "source": "scenario",
         "scenario": "work",
-        "response": SCENARIOS["work"]["response"],
+        "response": "Готую робоче середовище.",
         "actions": actions,
     }
 
@@ -111,7 +105,7 @@ def resolve_local_intent(text, context):
         return {
             "type": "multi_action",
             "source": "memory",
-            "response": "Запускаю те, що ти зазвичай відкриваєш для цього запиту.",
+            "response": "Зараз зроблю так, як ти зазвичай просиш.",
             "actions": learned_actions,
         }
 
