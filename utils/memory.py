@@ -82,3 +82,31 @@ def get_learned_actions(phrase):
         return None
 
     return actions
+
+
+def get_memory_summary(limit=5):
+    memory = _load_memory()
+
+    top_apps = sorted(
+        memory["app_launch_counts"].items(),
+        key=lambda item: item[1],
+        reverse=True,
+    )[:limit]
+
+    phrase_samples = sorted(
+        memory["phrase_actions"].items(),
+        key=lambda item: item[1].get("uses", 0),
+        reverse=True,
+    )[:limit]
+
+    return {
+        "top_apps": top_apps,
+        "phrase_samples": [
+            {
+                "phrase": phrase,
+                "uses": data.get("uses", 0),
+                "actions": data.get("actions", []),
+            }
+            for phrase, data in phrase_samples
+        ],
+    }

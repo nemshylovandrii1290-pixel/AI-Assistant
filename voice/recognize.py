@@ -1,7 +1,3 @@
-import os
-import tempfile
-import wave
-
 from faster_whisper import WhisperModel
 
 from utils.config import WHISPER_LANGUAGES
@@ -17,47 +13,35 @@ def _get_model():
     return _MODEL
 
 
-def _write_temp_wav(audio_data, samplerate):
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-    temp_file.close()
-
-    with wave.open(temp_file.name, "wb") as wav_file:
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(samplerate)
-        wav_file.writeframes(audio_data.tobytes())
-
-    return temp_file.name
-
-
-def _transcribe_once(audio_path, language):
+def _transcribe_once(audio_input, language):
     segments, info = _get_model().transcribe(
-        audio_path,
+        audio_input,
         language=language,
         beam_size=1,
         best_of=2,
         temperature=0.0,
         condition_on_previous_text=False,
         vad_filter=True,
-        initial_prompt="edit едіт едит стоп вистачить увімкни ігровий режим робочий режим відкрий",
+        initial_prompt="edit едіт едит стоп вистачить увімкни ігровий режим робочий режим відкрий telegram chatgpt sublime text",
     )
     text = " ".join(segment.text.strip() for segment in segments).strip()
     probability = getattr(info, "language_probability", 0.0) or 0.0
     return text, probability
 
 
-def _pick_best_transcript(audio_path):
+def _pick_best_transcript(audio_input):
     best_text = ""
     best_language = None
     best_score = -1.0
 
     for language in WHISPER_LANGUAGES:
-        text, probability = _transcribe_once(audio_path, language)
+        text, probability = _transcribe_once(audio_input, language)
         if not text:
             continue
 
-        score = len(text) + probability * 5
         lowered = text.lower()
+        score = len(text) + probability * 5
+
         if any(word in lowered for word in ("edit", "едіт", "едит", "stop", "стоп", "увімкни", "вимкни", "відкрий")):
             score += 20
         if language == "uk" and any(word in lowered for word in ("увімкни", "вимкни", "відкрий", "ігровий", "робочий")):
@@ -78,14 +62,8 @@ def recognize(audio_data, samplerate=16000):
         return ""
 
     if isinstance(audio_data, str):
-        audio_path = audio_data
-        remove_after = False
+        audio_input = audio_data
     else:
-        audio_path = _write_temp_wav(audio_data, samplerate)
-        remove_after = True
+        audio_input = audio_data.astype("float32") / 32768.0
 
-    try:
-        return _pick_best_transcript(audio_path)
-    finally:
-        if remove_after and os.path.exists(audio_path):
-            os.remove(audio_path)
+    return _pick_best_transcript(audio_input)

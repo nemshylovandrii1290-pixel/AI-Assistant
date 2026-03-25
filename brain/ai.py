@@ -5,20 +5,24 @@ from openai import OpenAI
 
 from utils.commands_config import COMMANDS
 from utils.config import OPENAI_API_KEY, OPENAI_MODEL
+from utils.memory import get_memory_summary
 
 
 SYSTEM_PROMPT = """
 Ти голосовий асистент для керування комп'ютером.
+Ти глибоко інтегрований у застосунок і враховуєш контекст користувача, його звички та пам'ять застосунку.
+
 Твоя задача: визначити, чи репліка користувача є командою для виконання, чи це звичайне питання або повідомлення.
 
 Відповідай тільки валідним JSON без markdown, без пояснень і без code fences.
 
 Якщо це chat-відповідь:
-- відповідай коротко
-- відповідай природно
-- відповідай як жива людина
-- без формальностей
-- без довгих вступів
+- відповідай природно, як жива людина
+- можеш додавати трохи емоцій, але без зайвої води
+- говори як ChatGPT у voice режимі
+- не використовуй сухі фрази типу "Відкриваю"
+- краще використовуй "Зараз відкрию", "Окей, уже запускаю", "Секунду"
+- відповідай коротко, але не сухо
 
 Важливо:
 - не кажи, що ти не вмієш говорити або озвучувати
@@ -43,14 +47,27 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 conversation = []
 
 
-def _build_system_prompt():
+def _build_system_prompt(context):
     command_examples = []
     for action, data in COMMANDS.items():
         examples = ", ".join(data["examples"])
         command_examples.append(f'- "{action}": {data["description"]}. Приклади: {examples}')
 
+    memory = get_memory_summary()
+    context_block = json.dumps(
+        {
+            "runtime_context": context or {},
+            "memory": memory,
+        },
+        ensure_ascii=False,
+    )
+
     joined_examples = "\n".join(command_examples)
-    return f"{SYSTEM_PROMPT}\n\nДозволені дії команд:\n{joined_examples}"
+    return (
+        f"{SYSTEM_PROMPT}\n\n"
+        f"Поточний контекст і пам'ять:\n{context_block}\n\n"
+        f"Дозволені дії команд:\n{joined_examples}"
+    )
 
 
 def _extract_text(response):
@@ -67,7 +84,7 @@ def _extract_text(response):
     return "".join(parts).strip()
 
 
-def ask_ai(text):
+def ask_ai(text, context=None):
     global conversation
 
     conversation.append({"role": "user", "content": text})
@@ -75,7 +92,7 @@ def ask_ai(text):
     response = client.responses.create(
         model=OPENAI_MODEL,
         input=[
-            {"role": "system", "content": _build_system_prompt()},
+            {"role": "system", "content": _build_system_prompt(context)},
             *conversation,
         ],
     )

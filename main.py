@@ -101,7 +101,7 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             _emit(status_callback, "action", response)
             continue
 
-        ai_result = ask_ai(text_lower)
+        ai_result = ask_ai(text_lower, context=context)
         result_type = ai_result.get("type")
 
         if result_type == "command":

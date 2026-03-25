@@ -51,10 +51,10 @@ def speak(text):
     print("Асистент:", text)
 
     try:
-        _speak_with_pyttsx3(text)
+        _try_silero(text)
     except Exception as error:
-        print(f"Fallback voice error: {error}")
+        print(f"Silero error: {error}")
         try:
-            _try_silero(text)
-        except Exception as silero_error:
-            print(f"Voice playback error: {silero_error}")
+            _speak_with_pyttsx3(text)
+        except Exception as fallback_error:
+            print(f"Voice error: {fallback_error}")
