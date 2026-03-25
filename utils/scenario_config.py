@@ -4,35 +4,65 @@ SCENARIOS = {
         "triggers": [
             "я хочу пограти",
             "хочу пограти",
+            "пограти",
             "ігрове середовище",
             "ігровий режим",
+            "вімкни ігровий режим",
+            "увімкни ігровий режим",
+            "включи ігровий режим",
+            "запусти ігровий режим",
             "gaming mode",
             "gaming",
             "play game",
-            "пограти",
-        ],
-        "actions": [
-            {"type": "open_app", "app": "steam"},
-            {"type": "open_app", "app": "discord"},
         ],
     },
     "work": {
         "response": "Готую робоче середовище.",
         "triggers": [
             "робоче середовище",
-            "зроби мені робоче середовище",
+            "робочий режим",
+            "робочий простір",
             "режим роботи",
+            "вімкни робочий режим",
+            "увімкни робочий режим",
+            "включи робочий режим",
+            "вімкни робочий простір",
+            "увімкни робочий простір",
+            "зроби мені робоче середовище",
             "підготуй роботу",
             "work setup",
             "work mode",
             "робота",
         ],
-        "actions": [
-            {"type": "open_app", "app": "google chrome"},
-            {"type": "command", "action": "open_code"},
-            {"type": "command", "action": "open_notepad"},
-        ],
     },
+}
+
+
+SCENARIO_ACTIONS = {
+    "gaming": [
+        {"type": "open_app", "app": "steam"},
+        {"type": "open_app", "app": "discord"},
+    ],
+    "work": [
+        {"type": "open_app", "app": "google chrome"},
+        {"type": "command", "action": "open_code"},
+        {"type": "command", "action": "open_notepad"},
+    ],
+}
+
+
+DISABLE_SCENARIO_TRIGGERS = {
+    "gaming": [
+        "вимкни ігровий режим",
+        "виключи ігровий режим",
+        "зупини ігровий режим",
+    ],
+    "work": [
+        "вимкни робочий режим",
+        "виключи робочий режим",
+        "зупини робочий режим",
+        "вимкни режим роботи",
+    ],
 }
 
 

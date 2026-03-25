@@ -87,6 +87,12 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
         context = get_runtime_context()
         local_intent = resolve_local_intent(text_lower, context)
         if local_intent:
+            if local_intent.get("type") == "chat":
+                response = local_intent.get("response", "Не зрозумів запит.")
+                speak(response)
+                _emit(status_callback, "chat", response)
+                continue
+
             result = execute_actions(local_intent.get("actions", []))
             remember_phrase_actions(text_lower, local_intent.get("actions", []))
             speak(local_intent.get("response") or result)
