@@ -1,12 +1,17 @@
+import json
+from urllib import parse, request
+
+import numpy as np
 import pyttsx3
 import sounddevice as sd
-import torch
 
+from utils.config import (
+    ELEVENLABS_API_KEY,
+    ELEVENLABS_MODEL_ID,
+    ELEVENLABS_OUTPUT_FORMAT,
+    ELEVENLABS_VOICE_ID,
+)
 
-_MODEL = None
-_MODEL_SPEAKER = "v4_ua"
-_VOICE_SPEAKER = "mykyta"
-_SAMPLE_RATE = 48000
 
 TTS_ALIASES = [
     ("github desktop", "гітхаб десктоп"),
@@ -30,36 +35,6 @@ def _speak_with_pyttsx3(text):
     engine.runAndWait()
 
 
-def _get_silero_model():
-    global _MODEL
-
-    if _MODEL is None:
-        torch.set_num_threads(1)
-        model, _ = torch.hub.load(
-            repo_or_dir="snakers4/silero-models",
-            model="silero_tts",
-            language="ua",
-            speaker=_MODEL_SPEAKER,
-        )
-        _MODEL = model
-
-    return _MODEL
-
-
-def _try_silero(text):
-    audio = _get_silero_model().apply_tts(
-        text=text,
-        speaker=_VOICE_SPEAKER,
-        sample_rate=_SAMPLE_RATE,
-    )
-
-    if hasattr(audio, "cpu"):
-        audio = audio.cpu().numpy()
-
-    sd.play(audio, _SAMPLE_RATE)
-    sd.wait()
-
-
 def _prepare_tts_text(text):
     spoken = text
     for source, target in TTS_ALIASES:
@@ -67,6 +42,59 @@ def _prepare_tts_text(text):
         spoken = spoken.replace(source.title(), target)
         spoken = spoken.replace(source.upper(), target)
     return spoken
+
+
+def _elevenlabs_sample_rate():
+    try:
+        codec, sample_rate = ELEVENLABS_OUTPUT_FORMAT.split("_", 1)
+        if codec != "pcm":
+            return None
+        return int(sample_rate)
+    except (AttributeError, ValueError):
+        return None
+
+
+def _try_elevenlabs(text):
+    if not ELEVENLABS_API_KEY:
+        raise RuntimeError("ELEVENLABS_API_KEY is not configured")
+    if not ELEVENLABS_VOICE_ID:
+        raise RuntimeError("ELEVENLABS_VOICE_ID is not configured")
+
+    sample_rate = _elevenlabs_sample_rate()
+    if not sample_rate:
+        raise RuntimeError(
+            f"Unsupported ELEVENLABS_OUTPUT_FORMAT '{ELEVENLABS_OUTPUT_FORMAT}'. Use pcm_<sample_rate>."
+        )
+
+    query = parse.urlencode({"output_format": ELEVENLABS_OUTPUT_FORMAT})
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}?{query}"
+    payload = json.dumps(
+        {
+            "text": text,
+            "model_id": ELEVENLABS_MODEL_ID,
+        }
+    ).encode("utf-8")
+
+    http_request = request.Request(
+        url,
+        data=payload,
+        method="POST",
+        headers={
+            "Accept": "audio/pcm",
+            "Content-Type": "application/json",
+            "xi-api-key": ELEVENLABS_API_KEY,
+        },
+    )
+
+    with request.urlopen(http_request, timeout=30) as response:
+        audio_bytes = response.read()
+
+    if not audio_bytes:
+        raise RuntimeError("ElevenLabs returned empty audio")
+
+    audio = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+    sd.play(audio, sample_rate)
+    sd.wait()
 
 
 def speak(text):
@@ -77,9 +105,9 @@ def speak(text):
     spoken_text = _prepare_tts_text(text)
 
     try:
-        _try_silero(spoken_text)
+        _try_elevenlabs(spoken_text)
     except Exception as error:
-        print(f"Silero error: {error}")
+        print(f"ElevenLabs error: {error}")
         try:
             _speak_with_pyttsx3(spoken_text)
         except Exception as fallback_error:

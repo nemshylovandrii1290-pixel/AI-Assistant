@@ -8,4 +8,3 @@ pyttsx3==2.99
 pywin32==311
 RapidFuzz==3.14.3
 sounddevice==0.5.5
-torch==2.10.0
