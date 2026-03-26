@@ -69,47 +69,60 @@ def execute_action(action, data=None):
         app_name = normalize_text((data or {}).get("app", ""))
 
         if not app_name:
-            return "Не зрозумів, який саме додаток потрібно відкрити."
+            return {"status": "error", "reason": "missing_app_name"}
 
         redirected_action = SPECIAL_APP_COMMANDS.get(app_name)
         if redirected_action:
             return execute_action(redirected_action, data)
 
         if app_name in AMBIGUOUS_APP_NAMES:
-            return f"Уточни, будь ласка, що саме ти хочеш відкрити під назвою {app_name}."
+            return {
+                "status": "error",
+                "reason": "ambiguous_app",
+                "app": app_name,
+                "source": "index"
+            }
 
         path = find_app(app_name)
         if path and _open_path(path):
             _log_stage("index", f"resolved '{app_name}' via app index: {path}")
-            return f"Відкриваю {app_name}"
+            return {"status": "success", "action": "open_app", "app": app_name, "source": "index"}
 
         if try_special_case_launch(app_name):
             _log_stage("special", f"resolved '{app_name}' via special launcher")
-            return f"Відкриваю {app_name}"
+            return {"status": "success", "action": "open_app", "app": app_name, "source": "special"}
 
         if _try_system_launch(app_name):
-            return f"Відкриваю {app_name}"
+            return {"status": "success", "action": "open_app", "app": app_name, "source": "system"}
 
         _log_stage("failback", f"app '{app_name}' not found")
-        return f"Не вдалося знайти додаток {app_name}"
+        return {"status": "error", "reason": "app_not_found", "app": app_name}
 
     if not command:
-        return "Не знаю такої команди."
+        return {"status": "error", "reason": "unknown_command"}
 
     if command["kind"] == "url":
         webbrowser.open(command["target"])
-        return command["response"]
+        return {
+            "status": "success",
+            "action": action,
+            "meta": data
+        }
 
     if command["kind"] == "command":
         os.system(command["target"])
-        return command["response"]
+        return {
+            "status": "success",
+            "action": action,
+            "meta": data
+        }
 
-    return "Не знаю, як виконати цю команду."
+    return {"status": "error", "reason": "unknown_command"}
 
 
 def execute_actions(actions):
     if not actions:
-        return "Немає дій для виконання."
+        return {"status": "error", "reason": "no_actions_to_execute"}
 
     responses = []
 
@@ -124,8 +137,14 @@ def execute_actions(actions):
             responses.append(execute_action(action.get("action"), action))
             continue
 
-    successful_responses = [response for response in responses if response]
+    successful_responses = [
+        response for response in responses
+        if isinstance(response, dict) and response.get("status") == "success"
+    ]
     if successful_responses:
         return successful_responses[-1]
 
-    return "Не вдалося виконати сценарій."
+    if responses:
+        return responses[-1]
+
+    return {"status": "error", "reason": "app_not_found", "app": actions[-1].get("app", "")}

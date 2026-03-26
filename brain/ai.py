@@ -142,7 +142,16 @@ def ask_ai(text, context=None):
         }
 
 
-def compose_assistant_reply(user_text, fallback_text, context=None, action_summary=None):
+def compose_assistant_reply(
+    user_text,
+    fallback_text=None,
+    context=None,
+    action_summary=None,
+    action_result=None,
+):
+    if fallback_text is None and action_result is not None:
+        fallback_text = action_result
+
     if not fallback_text:
         return ""
 
@@ -154,6 +163,7 @@ def compose_assistant_reply(user_text, fallback_text, context=None, action_summa
             {
                 "user_text": user_text,
                 "fallback_text": fallback_text,
+                "action_result": action_result or {},
                 "action_summary": action_summary or [],
                 "context": context or {},
             },

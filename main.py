@@ -57,6 +57,8 @@ def _action_result_to_fallback(result):
             return "Відкриваю Провідник."
         if action == "open_calculator":
             return "Відкриваю Калькулятор."
+        if action == "stop":
+            return "Окей, вимикаюсь."
         return "Готово."
 
     if reason == "missing_app_name":
@@ -83,13 +85,18 @@ def _contains_stop_command(text):
     return normalized in {"stop stop", "стоп стоп"}
 
 
-def _speak_action_reply(user_text, fallback_text, context, status_callback, action_summary=None):
+def _speak_action_reply(user_text, result, context, status_callback, action_summary=None):
     response = compose_assistant_reply(
         user_text=user_text,
-        fallback_text=fallback_text,
+        action_result=result,
+        fallback_text=_action_result_to_fallback(result),
         context=context,
         action_summary=action_summary,
     )
+
+    if not response:
+        response = _action_result_to_fallback(result)
+
     speak(response)
     _emit(status_callback, "action", response)
 
@@ -112,6 +119,7 @@ def _handle_local_intent(local_intent, text_lower, context, status_callback):
     response = compose_assistant_reply(
         user_text=text_lower,
         fallback_text=fallback_response or _action_result_to_fallback(result),
+        action_result=result,
         context=context,
         action_summary=local_intent.get("actions", []),
     )
@@ -152,13 +160,19 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             print("Ти сказав:", original_text)
         _emit(status_callback, "heard", original_text)
 
+        context = get_runtime_context()
+
         if _contains_stop_command(text_lower):
             last_activation_time = 0
-            speak("Окей, вимикаюсь")
+            response = compose_assistant_reply(
+                user_text=text_lower,
+                action_result={"status": "success", "action": "stop"},
+                fallback_text="Окей, вимикаюсь.",
+                context=context,
+            )
+            speak(response)
             _emit(status_callback, "stopped", "Асистент зупинений")
             return
-
-        context = get_runtime_context()
 
         direct_open_target = extract_open_target(text_lower)
         if direct_open_target:
@@ -168,10 +182,11 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
                 continue
 
             result = execute_action("open_app", {"app": direct_open_target})
-            remember_app_launch(direct_open_target)
+            if isinstance(result, dict) and result.get("status") == "success":
+                remember_app_launch(direct_open_target)
             _speak_action_reply(
                 user_text=text_lower,
-                fallback_text=_action_result_to_fallback(result),
+                result=result,
                 context=context,
                 status_callback=status_callback,
                 action_summary=[{"type": "open_app", "app": direct_open_target}],
@@ -210,10 +225,9 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             ):
                 remember_app_launch(ai_result["app"])
 
-            fallback_response = ai_result.get("response") or _action_result_to_fallback(result)
             _speak_action_reply(
                 user_text=text_lower,
-                fallback_text=fallback_response,
+                result=result,
                 context=context,
                 status_callback=status_callback,
                 action_summary=[ai_result],

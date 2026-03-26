@@ -1,7 +1,7 @@
 COMMANDS = {
     "open_app": {
         "description": "Відкрити встановлений додаток на комп'ютері за назвою",
-        "response": "Відкриваю додаток",
+        "response": None,
         "kind": "app",
         "target": None,
         "examples": [
@@ -12,7 +12,7 @@ COMMANDS = {
     },
     "open_google": {
         "description": "Відкрити Google у браузері",
-        "response": "Відкриваю Google",
+        "response": None,
         "kind": "url",
         "target": "https://www.google.com",
         "examples": [
@@ -23,7 +23,7 @@ COMMANDS = {
     },
     "open_youtube": {
         "description": "Відкрити YouTube у браузері",
-        "response": "Відкриваю YouTube",
+        "response": None,
         "kind": "url",
         "target": "https://www.youtube.com",
         "examples": [
@@ -34,7 +34,7 @@ COMMANDS = {
     },
     "open_github": {
         "description": "Відкрити GitHub у браузері",
-        "response": "Відкриваю GitHub",
+        "response": None,
         "kind": "url",
         "target": "https://github.com",
         "examples": [
@@ -45,7 +45,7 @@ COMMANDS = {
     },
     "open_explorer": {
         "description": "Відкрити провідник Windows",
-        "response": "Відкриваю провідник",
+        "response": None,
         "kind": "command",
         "target": "explorer",
         "examples": [
@@ -56,7 +56,7 @@ COMMANDS = {
     },
     "open_code": {
         "description": "Відкрити Visual Studio Code",
-        "response": "Відкриваю VS Code",
+        "response": None,
         "kind": "command",
         "target": "code",
         "examples": [
@@ -67,7 +67,7 @@ COMMANDS = {
     },
     "open_notepad": {
         "description": "Відкрити Блокнот",
-        "response": "Відкриваю Блокнот",
+        "response": None,
         "kind": "command",
         "target": "notepad",
         "examples": [
@@ -78,7 +78,7 @@ COMMANDS = {
     },
     "open_calculator": {
         "description": "Відкрити Калькулятор",
-        "response": "Відкриваю Калькулятор",
+        "response": None,
         "kind": "command",
         "target": "calc",
         "examples": [
