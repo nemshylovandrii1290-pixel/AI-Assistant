@@ -146,6 +146,9 @@ def compose_assistant_reply(user_text, fallback_text, context=None, action_summa
     if not fallback_text:
         return ""
 
+    if not isinstance(fallback_text, str):
+        fallback_text = json.dumps(fallback_text, ensure_ascii=False)
+
     try:
         prompt = json.dumps(
             {

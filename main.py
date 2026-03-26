@@ -28,6 +28,51 @@ def _emit(status_callback, status, message=""):
         status_callback(status, message)
 
 
+def _action_result_to_fallback(result):
+    if isinstance(result, str):
+        return result
+
+    if not isinstance(result, dict):
+        return "Щось сталося, але я не зміг нормально це пояснити."
+
+    status = result.get("status")
+    action = result.get("action")
+    app_name = result.get("app", "")
+    reason = result.get("reason")
+
+    if status == "success":
+        if action == "open_app" and app_name:
+            return f"Відкриваю {app_name}."
+        if action == "open_github":
+            return "Відкриваю GitHub."
+        if action == "open_google":
+            return "Відкриваю Google."
+        if action == "open_youtube":
+            return "Відкриваю YouTube."
+        if action == "open_code":
+            return "Відкриваю Visual Studio Code."
+        if action == "open_notepad":
+            return "Відкриваю Блокнот."
+        if action == "open_explorer":
+            return "Відкриваю Провідник."
+        if action == "open_calculator":
+            return "Відкриваю Калькулятор."
+        return "Готово."
+
+    if reason == "missing_app_name":
+        return "Уточни, будь ласка, який саме додаток потрібно відкрити."
+    if reason == "ambiguous_app" and app_name:
+        return f"Уточни, будь ласка, що саме ти хочеш відкрити під назвою {app_name}."
+    if reason == "app_not_found" and app_name:
+        return f"Не вдалося знайти додаток {app_name}."
+    if reason == "unknown_command":
+        return "Я поки не знаю такої команди."
+    if reason == "no_actions_to_execute":
+        return "Наразі немає дій для виконання."
+
+    return "Щось пішло не так, спробуй ще раз."
+
+
 def _contains_stop_command(text):
     normalized = normalize_text(text).lower().strip()
     tokens = normalized.split()
@@ -66,7 +111,7 @@ def _handle_local_intent(local_intent, text_lower, context, status_callback):
     remember_phrase_actions(text_lower, local_intent.get("actions", []))
     response = compose_assistant_reply(
         user_text=text_lower,
-        fallback_text=fallback_response or result,
+        fallback_text=fallback_response or _action_result_to_fallback(result),
         context=context,
         action_summary=local_intent.get("actions", []),
     )
@@ -126,7 +171,7 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             remember_app_launch(direct_open_target)
             _speak_action_reply(
                 user_text=text_lower,
-                fallback_text=result,
+                fallback_text=_action_result_to_fallback(result),
                 context=context,
                 status_callback=status_callback,
                 action_summary=[{"type": "open_app", "app": direct_open_target}],
@@ -157,10 +202,15 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
 
         if result_type == "command":
             result = execute_action(ai_result.get("action"), ai_result)
-            if ai_result.get("action") == "open_app" and ai_result.get("app"):
+            if (
+                ai_result.get("action") == "open_app"
+                and ai_result.get("app")
+                and isinstance(result, dict)
+                and result.get("status") == "success"
+            ):
                 remember_app_launch(ai_result["app"])
 
-            fallback_response = ai_result.get("response") or result
+            fallback_response = ai_result.get("response") or _action_result_to_fallback(result)
             _speak_action_reply(
                 user_text=text_lower,
                 fallback_text=fallback_response,
