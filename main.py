@@ -17,6 +17,7 @@ from voice.speak import StreamingSpeechPlayer, speak
 
 WAKE_WORDS = ("edit", "едіт", "едит")
 STOP_WORDS = ("stop", "стоп", "вистачить")
+YES_WORDS = ("так", "ага", "да", "yes", "угу")
 COMMAND_PREFIXES = (
     "відкрий",
     "open",
@@ -29,8 +30,8 @@ COMMAND_PREFIXES = (
     "закрий",
     "close",
 )
-ACTIVE_TIMEOUT = 300
 INCOMPLETE_ENDINGS = ("якийсь", "якась", "якесь", "some", "який", "яку", "what")
+ACTIVE_TIMEOUT = 90
 
 
 def _emit(status_callback, status, message=""):
@@ -54,8 +55,12 @@ def _contains_stop_command(text):
     return any(word in tokens for word in STOP_WORDS)
 
 
-def _looks_like_command(text):
-    return any(text.startswith(prefix) for prefix in COMMAND_PREFIXES)
+def _is_plain_wake_word(text):
+    return text.strip() in WAKE_WORDS
+
+
+def _is_yes_answer(text):
+    return text.strip() in YES_WORDS
 
 
 def _looks_incomplete(text):
@@ -85,7 +90,7 @@ def _action_result_to_fallback(result):
         if action == "open_app" and app_name:
             return f"Відкриваю {app_name}."
         if action == "stop":
-            return "Окей, вимикаюсь."
+            return "Добре, чекаю на тебе."
         return "Готово."
 
     if reason == "missing_app_name":
@@ -107,18 +112,29 @@ class AssistantRuntime:
         self.speech_player = StreamingSpeechPlayer()
         self.recognition_events = queue.Queue()
         self.gpt_requests = queue.Queue()
-        self.last_activation_time = 0.0
         self.recognition_thread = None
         self.gpt_thread = None
         self.gpt_running = False
         self.stop_generation = 0
         self.gpt_lock = threading.Lock()
-
-    def is_active(self):
-        return time.time() - self.last_activation_time < ACTIVE_TIMEOUT
+        self.state = "SLEEP"
+        self.last_active_time = 0.0
+        self.last_question = None
 
     def activate(self):
-        self.last_activation_time = time.time()
+        self.state = "ACTIVE"
+        self.last_active_time = time.time()
+
+    def sleep(self):
+        self.state = "SLEEP"
+
+    def _refresh_activity(self):
+        self.last_active_time = time.time()
+
+    def _check_timeout(self):
+        if self.state == "ACTIVE" and (time.time() - self.last_active_time > ACTIVE_TIMEOUT):
+            self.state = "SLEEP"
+            _emit(self.status_callback, "sleep", "Асистент перейшов у режим очікування")
 
     def start(self):
         index_source, app_count = ensure_app_index()
@@ -186,13 +202,13 @@ class AssistantRuntime:
             if request_item is None:
                 continue
 
-            utterance_id = request_item["utterance_id"]
             prompt = request_item["text"]
             context = request_item["context"]
             generation_marker = request_item["generation"]
 
             with self.gpt_lock:
                 self.gpt_running = True
+
             generation_id = self.speech_player.begin()
             try:
                 for delta in ask_gpt_stream(prompt, context=context):
@@ -203,7 +219,7 @@ class AssistantRuntime:
             except Exception as error:
                 fallback = compose_assistant_reply(
                     user_text=prompt,
-                    fallback_text=f"Sorry, something went wrong: {error}",
+                    fallback_text=f"Щось пішло не так: {error}",
                     context=context,
                 )
                 self.speech_player.push_text(generation_id, fallback)
@@ -214,6 +230,7 @@ class AssistantRuntime:
 
     def _event_loop(self):
         while not self.stop_event.is_set():
+            self._check_timeout()
             try:
                 event = self.recognition_events.get(timeout=0.1)
             except queue.Empty:
@@ -238,30 +255,34 @@ class AssistantRuntime:
             self.stop_generation += 1
             with self.gpt_lock:
                 self.gpt_running = False
-            response = compose_assistant_reply(
-                user_text=text,
-                action_result={"status": "success", "action": "stop"},
-                context=context,
-            ) or "Стоп, все зупинилось!"
-            speak(response)
-            self.stop_event.set()
+            self.sleep()
+            speak("Добре, чекаю на тебе.")
+            _emit(self.status_callback, "sleep", "Асистент у режимі очікування")
             return
 
         if _contains_wake_word(text):
             self.activate()
-            text = _strip_wake_words(text)
-            if not text:
+            if _is_plain_wake_word(text):
                 speak("Привіт, я тут. Що будемо робити?")
                 _emit(self.status_callback, "active", "Активований і чекає запит")
                 return
+            text = _strip_wake_words(text)
+        elif self.state == "SLEEP":
+            return
+
+        if not text:
+            return
+
+        self._refresh_activity()
+
+        if _is_yes_answer(text) and self.last_question == "fact":
+            speak("Ще один факт: восьминоги мають три серця.")
+            self.last_question = None
+            return
 
         direct_open_target = extract_open_target(text)
         if direct_open_target:
             self._handle_direct_open(text, direct_open_target, context)
-            return
-
-        if not self.is_active():
-            _emit(self.status_callback, "listening", "Фоновий режим")
             return
 
         local_intent = resolve_local_intent(text, context)
@@ -274,11 +295,13 @@ class AssistantRuntime:
             self._handle_ai_command(text, ai_result, context)
             return
 
-        if self.gpt_running:
+        if self.gpt_running or _looks_incomplete(text):
             return
 
-        if _looks_incomplete(text):
-            return
+        if "факт" in text or "цікавий факт" in text:
+            self.last_question = "fact"
+        else:
+            self.last_question = None
 
         self.gpt_requests.put(
             {
@@ -312,7 +335,7 @@ class AssistantRuntime:
         if local_intent.get("type") == "chat":
             response = compose_assistant_reply(
                 user_text=user_text,
-                fallback_text=local_intent.get("response", "Okay."),
+                fallback_text=local_intent.get("response", "Добре."),
                 context=context,
             )
             speak(response)
