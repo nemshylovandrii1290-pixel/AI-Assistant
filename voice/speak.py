@@ -177,50 +177,13 @@ class StreamingSpeechPlayer:
 
             if event_type == "text":
                 self.buffer += payload
-                for chunk in self._drain_chunks(force=False):
-                    speak(chunk)
                 continue
 
             if event_type == "flush":
-                for chunk in self._drain_chunks(force=True):
-                    speak(chunk)
+                full_text = self.buffer.strip()
+                if full_text:
+                    speak(full_text)
                 self.buffer = ""
-
-    def _drain_chunks(self, force=False):
-        chunks = []
-
-        while True:
-            if not self.buffer:
-                break
-
-            split_index = self._find_split_index(force=force)
-            if split_index <= 0:
-                break
-
-            chunk = self.buffer[:split_index].strip()
-            self.buffer = self.buffer[split_index:].lstrip()
-
-            if chunk:
-                chunks.append(chunk)
-
-        return chunks
-
-    def _find_split_index(self, force=False):
-        if force:
-            return len(self.buffer)
-
-        punctuation_match = list(re.finditer(r"[.!?]\s", self.buffer))
-        if punctuation_match:
-            return punctuation_match[0].end()
-
-        if len(self.buffer) < self.min_chunk_chars:
-            return 0
-
-        last_space = self.buffer.rfind(" ")
-        if last_space > 0:
-            return last_space
-
-        return len(self.buffer)
 
 
 _STREAM_PLAYER = StreamingSpeechPlayer()

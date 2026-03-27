@@ -30,6 +30,7 @@ COMMAND_PREFIXES = (
     "close",
 )
 ACTIVE_TIMEOUT = 300
+INCOMPLETE_ENDINGS = ("якийсь", "якась", "якесь", "some", "який", "яку", "what")
 
 
 def _emit(status_callback, status, message=""):
@@ -55,6 +56,17 @@ def _contains_stop_command(text):
 
 def _looks_like_command(text):
     return any(text.startswith(prefix) for prefix in COMMAND_PREFIXES)
+
+
+def _looks_incomplete(text):
+    stripped = text.strip()
+    if not stripped:
+        return True
+    if stripped.endswith(INCOMPLETE_ENDINGS):
+        return True
+    if len(stripped.split()) < 3:
+        return True
+    return False
 
 
 def _action_result_to_fallback(result):
@@ -100,6 +112,9 @@ class AssistantRuntime:
         self.gpt_thread = None
         self.gpt_started_ids = set()
         self.partial_seen = {}
+        self.gpt_running = False
+        self.stop_generation = 0
+        self.gpt_lock = threading.Lock()
 
     def is_active(self):
         return time.time() - self.last_activation_time < ACTIVE_TIMEOUT
@@ -176,11 +191,14 @@ class AssistantRuntime:
             utterance_id = request_item["utterance_id"]
             prompt = request_item["text"]
             context = request_item["context"]
+            generation_marker = request_item["generation"]
 
+            with self.gpt_lock:
+                self.gpt_running = True
             generation_id = self.speech_player.begin()
             try:
                 for delta in ask_gpt_stream(prompt, context=context):
-                    if self.stop_event.is_set():
+                    if self.stop_event.is_set() or generation_marker != self.stop_generation:
                         break
                     self.speech_player.push_text(generation_id, delta)
                 self.speech_player.end(generation_id)
@@ -193,6 +211,8 @@ class AssistantRuntime:
                 self.speech_player.push_text(generation_id, fallback)
                 self.speech_player.end(generation_id)
             finally:
+                with self.gpt_lock:
+                    self.gpt_running = False
                 self.gpt_started_ids.add(utterance_id)
 
     def _event_loop(self):
@@ -210,6 +230,10 @@ class AssistantRuntime:
     def _handle_partial(self, event):
         text = normalize_text(event["text"]).lower().strip()
         if not is_valid_text(text):
+            return
+
+        previous_text = self.partial_seen.get(event["utterance_id"], "")
+        if previous_text and len(text) < len(previous_text):
             return
 
         self.partial_seen[event["utterance_id"]] = text
@@ -234,10 +258,10 @@ class AssistantRuntime:
         if resolve_local_intent(clean_text, get_runtime_context()):
             return
 
-        if event["utterance_id"] in self.gpt_started_ids:
+        if event["utterance_id"] in self.gpt_started_ids or self.gpt_running:
             return
 
-        if len(clean_text) < 18:
+        if len(clean_text) < 18 or _looks_incomplete(clean_text):
             return
 
         self.gpt_started_ids.add(event["utterance_id"])
@@ -246,6 +270,7 @@ class AssistantRuntime:
                 "utterance_id": event["utterance_id"],
                 "text": clean_text,
                 "context": get_runtime_context(),
+                "generation": self.stop_generation,
             }
         )
 
@@ -262,11 +287,14 @@ class AssistantRuntime:
         context = get_runtime_context()
 
         if _contains_stop_command(text):
+            self.stop_generation += 1
+            with self.gpt_lock:
+                self.gpt_running = False
             response = compose_assistant_reply(
                 user_text=text,
                 action_result={"status": "success", "action": "stop"},
                 context=context,
-            ) or "Окей, вимикаюсь."
+            ) or "Стоп, все зупинилось!"
             speak(response)
             self.stop_event.set()
             return
@@ -298,7 +326,10 @@ class AssistantRuntime:
             self._handle_ai_command(text, ai_result, context)
             return
 
-        if event["utterance_id"] in self.gpt_started_ids:
+        if event["utterance_id"] in self.gpt_started_ids or self.gpt_running:
+            return
+
+        if _looks_incomplete(text):
             return
 
         self.gpt_started_ids.add(event["utterance_id"])
@@ -307,6 +338,7 @@ class AssistantRuntime:
                 "utterance_id": event["utterance_id"],
                 "text": text,
                 "context": context,
+                "generation": self.stop_generation,
             }
         )
 
