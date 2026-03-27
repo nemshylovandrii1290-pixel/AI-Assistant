@@ -51,53 +51,31 @@ def _transcribe_once(audio_input, language):
     return text, probability
 
 
+def is_valid_text(text):
+    if not text:
+        return False
+
+    normalized = text.strip().lower()
+    if len(normalized) < 3:
+        return False
+
+    if normalized in {"ай", "е", "а", "мм", "эм", "uh", "um"}:
+        return False
+
+    unique_chars = set(normalized.replace(" ", ""))
+    if len(normalized) > 12 and len(unique_chars) <= 2:
+        return False
+
+    return True
+
+
 def _pick_best_transcript(audio_input):
-    best_text = ""
-    best_language = None
-    best_score = -1.0
+    language = WHISPER_LANGUAGES[0] if WHISPER_LANGUAGES else "uk"
+    text, probability = _transcribe_once(audio_input, language)
 
-    for language in WHISPER_LANGUAGES:
-        text, probability = _transcribe_once(audio_input, language)
-        if not text:
-            continue
-
-        lowered = text.lower()
-        score = len(text) + probability * 5
-
-        if any(
-            word in lowered
-            for word in (
-                "edit",
-                "едіт",
-                "едит",
-                "stop",
-                "стоп",
-                "вимкни",
-                "увімкни",
-                "відкрий",
-                "open",
-                "github",
-                "telegram",
-                "steam",
-                "discord",
-            )
-        ):
-            score += 20
-
-        if language == "uk" and any(
-            word in lowered
-            for word in ("увімкни", "вимкни", "відкрий", "ігров", "робоч")
-        ):
-            score += 8
-
-        if score > best_score:
-            best_text = text
-            best_language = language
-            best_score = score
-
-    if best_text:
-        print(f"[speech:{best_language}] recognized")
-    return best_text
+    if text:
+        print(f"[speech:{language}] recognized")
+    return text if is_valid_text(text) else ""
 
 
 def recognize(audio_data, samplerate=SAMPLE_RATE):
@@ -116,7 +94,7 @@ class StreamingRecognizer:
     def __init__(
         self,
         samplerate=SAMPLE_RATE,
-        partial_interval=0.35,
+        partial_interval=0.9,
         max_window_seconds=1.6,
         silence_timeout=SILENCE_TIMEOUT,
         min_speech_seconds=0.35,
@@ -133,6 +111,7 @@ class StreamingRecognizer:
         self.last_voice_time = 0.0
         self.last_partial_time = 0.0
         self.last_partial_text = ""
+        self.stable_count = 0
         self.trailing_buffer = np.zeros(0, dtype=np.int16)
 
     def _speech_level_threshold(self):
@@ -175,6 +154,7 @@ class StreamingRecognizer:
                 self.current_utterance = [self.trailing_buffer.copy()]
                 self.last_partial_text = ""
                 self.last_partial_time = 0.0
+                self.stable_count = 0
             else:
                 self.current_utterance.append(flattened)
 
@@ -188,8 +168,17 @@ class StreamingRecognizer:
                 partial_text = recognize(partial_audio, samplerate=self.samplerate)
                 self.last_partial_time = now
 
-                if partial_text and partial_text != self.last_partial_text:
+                if partial_text == self.last_partial_text:
+                    self.stable_count += 1
+                else:
+                    self.stable_count = 0
                     self.last_partial_text = partial_text
+
+                if (
+                    is_valid_text(partial_text)
+                    and self.stable_count >= 2
+                    and len(partial_text.strip()) > 5
+                ):
                     events.append(
                         {
                             "type": "partial",
@@ -207,11 +196,12 @@ class StreamingRecognizer:
                 self.speech_active = False
                 self.current_utterance = []
                 self.last_partial_time = 0.0
+                self.stable_count = 0
                 self.trailing_buffer = np.zeros(0, dtype=np.int16)
 
                 if len(audio) >= self.min_speech_samples:
                     final_text = recognize(audio, samplerate=self.samplerate)
-                    if final_text:
+                    if is_valid_text(final_text):
                         events.append(
                             {
                                 "type": "final",

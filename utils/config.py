@@ -19,7 +19,7 @@ RECOGNITION_LANGUAGES = [
 ]
 WHISPER_LANGUAGES = [
     language.strip()
-    for language in os.getenv("WHISPER_LANGUAGES", "uk,ru,en").split(",")
+    for language in os.getenv("WHISPER_LANGUAGES", "uk").split(",")
     if language.strip()
 ]
 SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "16000"))

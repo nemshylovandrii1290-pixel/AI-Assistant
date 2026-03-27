@@ -11,7 +11,7 @@ from utils.intent_router import resolve_local_intent
 from utils.memory import remember_app_launch, remember_phrase_actions
 from utils.normalize import normalize_text
 from voice.listen import AudioStream
-from voice.recognize import StreamingRecognizer
+from voice.recognize import StreamingRecognizer, is_valid_text
 from voice.speak import StreamingSpeechPlayer, speak
 
 
@@ -62,7 +62,7 @@ def _action_result_to_fallback(result):
         return result
 
     if not isinstance(result, dict):
-        return "Something happened, but I could not explain it clearly."
+        return "Щось сталося, але я не можу це нормально пояснити."
 
     status = result.get("status")
     action = result.get("action")
@@ -71,18 +71,18 @@ def _action_result_to_fallback(result):
 
     if status == "success":
         if action == "open_app" and app_name:
-            return f"Opening {app_name}."
+            return f"Відкриваю {app_name}."
         if action == "stop":
-            return "Okay, shutting down."
-        return "Done."
+            return "Окей, вимикаюсь."
+        return "Готово."
 
     if reason == "missing_app_name":
-        return "Please tell me which app to open."
+        return "Скажи, будь ласка, який саме додаток відкрити."
     if reason == "ambiguous_app" and app_name:
-        return f"Please clarify what exactly you want under the name {app_name}."
+        return f"Уточни, будь ласка, що саме ти маєш на увазі під {app_name}."
     if reason == "app_not_found" and app_name:
-        return f"I could not find the app {app_name}."
-    return "Something went wrong, try again."
+        return f"Не вдалося знайти додаток {app_name}."
+    return "Щось пішло не так, спробуй ще раз."
 
 
 class AssistantRuntime:
@@ -209,11 +209,9 @@ class AssistantRuntime:
 
     def _handle_partial(self, event):
         text = normalize_text(event["text"]).lower().strip()
-        if not text:
+        if not is_valid_text(text):
             return
 
-        if self.partial_seen.get(event["utterance_id"]) == text:
-            return
         self.partial_seen[event["utterance_id"]] = text
 
         if not self.quiet:
@@ -254,7 +252,7 @@ class AssistantRuntime:
     def _handle_final(self, event):
         original_text = event["text"]
         text = normalize_text(original_text).lower().strip()
-        if not text:
+        if not is_valid_text(text):
             return
 
         if not self.quiet:
@@ -268,7 +266,7 @@ class AssistantRuntime:
                 user_text=text,
                 action_result={"status": "success", "action": "stop"},
                 context=context,
-            ) or "Okay, shutting down."
+            ) or "Окей, вимикаюсь."
             speak(response)
             self.stop_event.set()
             return
@@ -277,8 +275,8 @@ class AssistantRuntime:
             self.activate()
             text = _strip_wake_words(text)
             if not text:
-                speak("Yes?")
-                _emit(self.status_callback, "active", "Activated and waiting")
+                speak("Привіт, я тут. Що будемо робити?")
+                _emit(self.status_callback, "active", "Активований і чекає запит")
                 return
 
         direct_open_target = extract_open_target(text)
@@ -287,7 +285,7 @@ class AssistantRuntime:
             return
 
         if not self.is_active():
-            _emit(self.status_callback, "listening", "Background mode")
+            _emit(self.status_callback, "listening", "Фоновий режим")
             return
 
         local_intent = resolve_local_intent(text, context)
