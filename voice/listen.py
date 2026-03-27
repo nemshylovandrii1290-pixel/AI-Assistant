@@ -1,4 +1,5 @@
 from collections import deque
+import queue
 
 import numpy as np
 import sounddevice as sd
@@ -16,9 +17,57 @@ from utils.config import (
 )
 
 
+_audio_queue = queue.Queue()
+_stream = None
+
+
+def start_stream():
+    global _stream
+
+    if _stream is not None:
+        return _stream
+
+    chunk_size = max(1, int(SAMPLE_RATE * CHUNK_DURATION))
+
+    def callback(indata, frames, time_info, status):
+        if status:
+            return
+        _audio_queue.put(indata.copy())
+
+    _stream = sd.InputStream(
+        samplerate=SAMPLE_RATE,
+        channels=1,
+        dtype="int16",
+        blocksize=chunk_size,
+        callback=callback,
+    )
+    _stream.start()
+    return _stream
+
+
+def get_chunk(timeout=0.5):
+    try:
+        return _audio_queue.get(timeout=timeout)
+    except queue.Empty:
+        return None
+
+
+def stop_stream():
+    global _stream
+
+    if _stream is None:
+        return
+
+    try:
+        _stream.stop()
+    finally:
+        _stream.close()
+        _stream = None
+
+
 def listen(duration=LISTEN_DURATION, stop_event=None, quiet=False):
     samplerate = SAMPLE_RATE
-    chunk_size = int(samplerate * CHUNK_DURATION)
+    chunk_size = max(1, int(samplerate * CHUNK_DURATION))
     max_chunks = max(1, int(duration / CHUNK_DURATION))
     silence_limit = max(1, int(SILENCE_TIMEOUT / CHUNK_DURATION))
     min_speech_chunks = max(1, int(MIN_SPEECH_DURATION / CHUNK_DURATION))

@@ -186,3 +186,15 @@ def compose_assistant_reply(
         return reply or fallback_text
     except Exception:
         return fallback_text
+
+def ask_gpt_stream(prompt):
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        stream=True,
+    )
+
+    for chunk in response:
+        delta = chunk.choices[0].delta.content
+        if delta:
+            yield delta

@@ -1,16 +1,17 @@
 import numpy as np
 
-from faster_whisper import WhisperModel
-
 from utils.config import WHISPER_LANGUAGES
 
 
 _MODEL = None
+_STREAM_BUFFER = np.zeros(0, dtype=np.int16)
 
 
 def _get_model():
     global _MODEL
     if _MODEL is None:
+        from faster_whisper import WhisperModel
+
         _MODEL = WhisperModel("small", device="cpu", compute_type="int8")
     return _MODEL
 
@@ -25,10 +26,10 @@ def _transcribe_once(audio_input, language):
         condition_on_previous_text=False,
         vad_filter=True,
         initial_prompt=(
-            "edit едіт едит стоп вистачить увімкни вимкни "
-            "ігровий простір ігровий режим робочий простір робочий режим "
-            "відкрий github github desktop telegram microsoft store "
-            "chatgpt sublime text cute lock"
+            "edit edid edit stop stop stop uvimkny vymkny "
+            "ihrove seredovyshche robochyi prostir vidkryi "
+            "github github desktop telegram microsoft store "
+            "chatgpt sublime text cute lock steam discord"
         ),
     )
     text = " ".join(segment.text.strip() for segment in segments).strip()
@@ -53,23 +54,23 @@ def _pick_best_transcript(audio_input):
             word in lowered
             for word in (
                 "edit",
-                "едіт",
-                "едит",
+                "edid",
                 "stop",
-                "стоп",
-                "увімкни",
-                "вимкни",
-                "відкрий",
+                "uvimkny",
+                "vymkny",
+                "vidkryi",
                 "github",
                 "telegram",
                 "microsoft",
+                "steam",
+                "discord",
             )
         ):
             score += 20
 
         if language == "uk" and any(
             word in lowered
-            for word in ("увімкни", "вимкни", "відкрий", "ігровий", "робочий")
+            for word in ("uvimkny", "vymkny", "vidkryi", "ihrov", "roboch")
         ):
             score += 8
 
@@ -93,3 +94,27 @@ def recognize(audio_data, samplerate=16000):
         audio_input = np.asarray(audio_data).reshape(-1).astype("float32") / 32768.0
 
     return _pick_best_transcript(audio_input)
+
+
+def reset_stream_buffer():
+    global _STREAM_BUFFER
+    _STREAM_BUFFER = np.zeros(0, dtype=np.int16)
+
+
+def process_chunk(chunk):
+    global _STREAM_BUFFER
+
+    if chunk is None:
+        return ""
+
+    flattened = np.asarray(chunk).reshape(-1).astype(np.int16)
+    _STREAM_BUFFER = np.concatenate([_STREAM_BUFFER, flattened])
+
+    max_samples = 16000 * 2
+    if len(_STREAM_BUFFER) > max_samples:
+        _STREAM_BUFFER = _STREAM_BUFFER[-max_samples:]
+
+    if len(_STREAM_BUFFER) < 16000:
+        return ""
+
+    return recognize(_STREAM_BUFFER)

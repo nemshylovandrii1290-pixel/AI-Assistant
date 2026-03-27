@@ -53,6 +53,19 @@ def _elevenlabs_sample_rate():
     except (AttributeError, ValueError):
         return None
 
+def speak_stream(generator):
+    buffer = ""
+
+    for chunk in generator:
+        buffer += chunk
+
+        if len(buffer) > 30:
+            speak(buffer)
+            buffer = ""
+
+    if buffer:
+        speak(buffer)
+
 
 def _try_elevenlabs(text):
     if not ELEVENLABS_API_KEY:

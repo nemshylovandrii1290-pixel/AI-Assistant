@@ -1,6 +1,6 @@
 import time
 
-from brain.ai import ask_ai, compose_assistant_reply
+from brain.ai import ask_ai, ask_gpt_stream, compose_assistant_reply
 from brain.commands import execute_action, execute_actions
 from utils.app_finder import ensure_app_index
 from utils.config import ACTIVE_LISTEN_DURATION, IDLE_LISTEN_DURATION
@@ -9,12 +9,13 @@ from utils.intent_parser import extract_open_target
 from utils.intent_router import resolve_local_intent
 from utils.memory import remember_app_launch, remember_phrase_actions
 from utils.normalize import normalize_text
-from voice.listen import listen
-from voice.recognize import recognize
-from voice.speak import speak
+from voice.listen import get_chunk, listen, start_stream, stop_stream
+from voice.recognize import process_chunk, recognize, reset_stream_buffer
+from voice.speak import speak, speak_stream
 
 
-WAKE_WORDS = ["edit", "едіт", "едит"]
+WAKE_WORDS = ["edit", "edid", "edyt"]
+STOP_WORDS = {"stop", "stoph", "stopp"}
 ACTIVE_TIMEOUT = 300
 last_activation_time = 0
 
@@ -33,7 +34,7 @@ def _action_result_to_fallback(result):
         return result
 
     if not isinstance(result, dict):
-        return "Щось сталося, але я не зміг нормально це пояснити."
+        return "Something happened, but I could not explain it clearly."
 
     status = result.get("status")
     action = result.get("action")
@@ -42,54 +43,65 @@ def _action_result_to_fallback(result):
 
     if status == "success":
         if action == "open_app" and app_name:
-            return f"Відкриваю {app_name}."
+            return f"Opening {app_name}."
         if action == "open_github":
-            return "Відкриваю GitHub."
+            return "Opening GitHub."
         if action == "open_google":
-            return "Відкриваю Google."
+            return "Opening Google."
         if action == "open_youtube":
-            return "Відкриваю YouTube."
+            return "Opening YouTube."
         if action == "open_code":
-            return "Відкриваю Visual Studio Code."
+            return "Opening Visual Studio Code."
         if action == "open_notepad":
-            return "Відкриваю Блокнот."
+            return "Opening Notepad."
         if action == "open_explorer":
-            return "Відкриваю Провідник."
+            return "Opening File Explorer."
         if action == "open_calculator":
-            return "Відкриваю Калькулятор."
+            return "Opening Calculator."
         if action == "stop":
-            return "Окей, вимикаюсь."
-        return "Готово."
+            return "Okay, shutting down."
+        return "Done."
 
     if reason == "missing_app_name":
-        return "Уточни, будь ласка, який саме додаток потрібно відкрити."
+        return "Please уточни, which app I should open."
     if reason == "ambiguous_app" and app_name:
-        return f"Уточни, будь ласка, що саме ти хочеш відкрити під назвою {app_name}."
+        return f"Please clarify what exactly you want under the name {app_name}."
     if reason == "app_not_found" and app_name:
-        return f"Не вдалося знайти додаток {app_name}."
+        return f"I could not find the app {app_name}."
     if reason == "unknown_command":
-        return "Я поки не знаю такої команди."
+        return "I do not know that command yet."
     if reason == "no_actions_to_execute":
-        return "Наразі немає дій для виконання."
+        return "There are no actions to execute right now."
 
-    return "Щось пішло не так, спробуй ще раз."
+    return "Something went wrong, try again."
 
 
 def _contains_stop_command(text):
     normalized = normalize_text(text).lower().strip()
     tokens = normalized.split()
 
-    if "стоп" in tokens or "вистачить" in tokens or "stop" in tokens:
+    if any(token in STOP_WORDS for token in tokens):
         return True
 
-    return normalized in {"stop stop", "стоп стоп"}
+    return normalized in {"stop stop", "stop-stop"}
+
+
+def _contains_wake_word(text):
+    normalized = normalize_text(text).lower()
+    return any(wake_word in normalized for wake_word in WAKE_WORDS)
+
+
+def _remove_wake_words(text):
+    normalized = normalize_text(text).lower()
+    for wake_word in WAKE_WORDS:
+        normalized = normalized.replace(wake_word, " ")
+    return " ".join(normalized.split())
 
 
 def _speak_action_reply(user_text, result, context, status_callback, action_summary=None):
     response = compose_assistant_reply(
         user_text=user_text,
         action_result=result,
-        fallback_text=_action_result_to_fallback(result),
         context=context,
         action_summary=action_summary,
     )
@@ -102,7 +114,7 @@ def _speak_action_reply(user_text, result, context, status_callback, action_summ
 
 
 def _handle_local_intent(local_intent, text_lower, context, status_callback):
-    fallback_response = local_intent.get("response", "Зараз зроблю.")
+    fallback_response = local_intent.get("response", "Doing it now.")
 
     if local_intent.get("type") == "chat":
         response = compose_assistant_reply(
@@ -118,13 +130,46 @@ def _handle_local_intent(local_intent, text_lower, context, status_callback):
     remember_phrase_actions(text_lower, local_intent.get("actions", []))
     response = compose_assistant_reply(
         user_text=text_lower,
-        fallback_text=fallback_response or _action_result_to_fallback(result),
         action_result=result,
         context=context,
         action_summary=local_intent.get("actions", []),
     )
+    if not response:
+        response = fallback_response or _action_result_to_fallback(result)
     speak(response)
     _emit(status_callback, "action", response)
+
+
+def run_streaming_preview(stop_event=None, quiet=False, status_callback=None):
+    stream = start_stream()
+    last_text = ""
+    reset_stream_buffer()
+    _emit(status_callback, "streaming", "Streaming preview active")
+
+    try:
+        while not (stop_event and stop_event.is_set()):
+            chunk = get_chunk(timeout=0.5)
+            text = process_chunk(chunk)
+
+            if not text:
+                continue
+
+            normalized_text = normalize_text(text).lower()
+            if normalized_text == last_text:
+                continue
+
+            last_text = normalized_text
+            if not quiet:
+                print("Partial:", text)
+
+            if len(normalized_text) < 15:
+                continue
+
+            generator = ask_gpt_stream(text)
+            speak_stream(generator)
+            _emit(status_callback, "streaming", text)
+    finally:
+        stop_stream()
 
 
 def run_assistant(stop_event=None, quiet=False, status_callback=None):
@@ -150,14 +195,14 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             continue
 
         if not text:
-            _emit(status_callback, "listening", "Очікую активаційну команду")
+            _emit(status_callback, "listening", "Waiting for wake word")
             continue
 
         original_text = text
         text_lower = normalize_text(text).lower()
 
         if not quiet:
-            print("Ти сказав:", original_text)
+            print("You said:", original_text)
         _emit(status_callback, "heard", original_text)
 
         context = get_runtime_context()
@@ -167,11 +212,12 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             response = compose_assistant_reply(
                 user_text=text_lower,
                 action_result={"status": "success", "action": "stop"},
-                fallback_text="Окей, вимикаюсь.",
                 context=context,
             )
+            if not response:
+                response = _action_result_to_fallback({"status": "success", "action": "stop"})
             speak(response)
-            _emit(status_callback, "stopped", "Асистент зупинений")
+            _emit(status_callback, "stopped", "Assistant stopped")
             return
 
         direct_open_target = extract_open_target(text_lower)
@@ -193,18 +239,17 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             )
             continue
 
-        if any(wake_word in text_lower for wake_word in WAKE_WORDS):
+        if _contains_wake_word(text_lower):
             last_activation_time = time.time()
-            for wake_word in WAKE_WORDS:
-                text_lower = text_lower.replace(wake_word, "").strip()
+            text_lower = _remove_wake_words(text_lower)
 
             if not text_lower:
-                speak("Так?")
-                _emit(status_callback, "active", "Активований і чекає запит")
+                speak("Yes?")
+                _emit(status_callback, "active", "Activated and waiting")
                 continue
 
         if not is_active():
-            _emit(status_callback, "listening", "Працює у фоновому режимі")
+            _emit(status_callback, "listening", "Background mode")
             continue
 
         local_intent = resolve_local_intent(text_lower, context)
@@ -235,25 +280,25 @@ def run_assistant(stop_event=None, quiet=False, status_callback=None):
             continue
 
         if result_type == "chat":
-            response = ai_result.get("response", "Щось не склалося, спробуй ще раз.")
+            response = ai_result.get("response", "Something went wrong, try again.")
             speak(response)
             _emit(status_callback, "chat", response)
             continue
 
-        response = "Щось не склалося, спробуй ще раз."
+        response = "Something went wrong, try again."
         speak(response)
         _emit(status_callback, "chat", response)
 
-    _emit(status_callback, "stopped", "Асистент зупинений")
+    _emit(status_callback, "stopped", "Assistant stopped")
 
 
 def main():
     try:
         run_assistant()
     except KeyboardInterrupt:
-        print("\nАсистент зупинений.")
+        print("\nAssistant stopped.")
     else:
-        print("Асистент зупинений.")
+        print("Assistant stopped.")
 
 
 if __name__ == "__main__":
