@@ -110,8 +110,6 @@ class AssistantRuntime:
         self.last_activation_time = 0.0
         self.recognition_thread = None
         self.gpt_thread = None
-        self.gpt_started_ids = set()
-        self.partial_seen = {}
         self.gpt_running = False
         self.stop_generation = 0
         self.gpt_lock = threading.Lock()
@@ -213,7 +211,6 @@ class AssistantRuntime:
             finally:
                 with self.gpt_lock:
                     self.gpt_running = False
-                self.gpt_started_ids.add(utterance_id)
 
     def _event_loop(self):
         while not self.stop_event.is_set():
@@ -222,57 +219,8 @@ class AssistantRuntime:
             except queue.Empty:
                 continue
 
-            if event["type"] == "partial":
-                self._handle_partial(event)
-            elif event["type"] == "final":
+            if event["type"] == "final":
                 self._handle_final(event)
-
-    def _handle_partial(self, event):
-        text = normalize_text(event["text"]).lower().strip()
-        if not is_valid_text(text):
-            return
-
-        previous_text = self.partial_seen.get(event["utterance_id"], "")
-        if previous_text and len(text) < len(previous_text):
-            return
-
-        self.partial_seen[event["utterance_id"]] = text
-
-        if not self.quiet:
-            print(f"Partial: {text}")
-        _emit(self.status_callback, "partial", text)
-
-        if _contains_wake_word(text):
-            self.activate()
-
-        clean_text = _strip_wake_words(text)
-        if not clean_text or not self.is_active():
-            return
-
-        if _looks_like_command(clean_text):
-            return
-
-        if extract_open_target(clean_text):
-            return
-
-        if resolve_local_intent(clean_text, get_runtime_context()):
-            return
-
-        if event["utterance_id"] in self.gpt_started_ids or self.gpt_running:
-            return
-
-        if len(clean_text) < 18 or _looks_incomplete(clean_text):
-            return
-
-        self.gpt_started_ids.add(event["utterance_id"])
-        self.gpt_requests.put(
-            {
-                "utterance_id": event["utterance_id"],
-                "text": clean_text,
-                "context": get_runtime_context(),
-                "generation": self.stop_generation,
-            }
-        )
 
     def _handle_final(self, event):
         original_text = event["text"]
@@ -326,13 +274,12 @@ class AssistantRuntime:
             self._handle_ai_command(text, ai_result, context)
             return
 
-        if event["utterance_id"] in self.gpt_started_ids or self.gpt_running:
+        if self.gpt_running:
             return
 
         if _looks_incomplete(text):
             return
 
-        self.gpt_started_ids.add(event["utterance_id"])
         self.gpt_requests.put(
             {
                 "utterance_id": event["utterance_id"],
