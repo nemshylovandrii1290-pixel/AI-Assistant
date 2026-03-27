@@ -1,32 +1,60 @@
+import queue
+import threading
 import time
 
 from brain.ai import ask_ai, ask_gpt_stream, compose_assistant_reply
 from brain.commands import execute_action, execute_actions
 from utils.app_finder import ensure_app_index
-from utils.config import ACTIVE_LISTEN_DURATION, IDLE_LISTEN_DURATION
 from utils.context import get_runtime_context
 from utils.intent_parser import extract_open_target
 from utils.intent_router import resolve_local_intent
 from utils.memory import remember_app_launch, remember_phrase_actions
 from utils.normalize import normalize_text
-from voice.listen import get_chunk, listen, start_stream, stop_stream
-from voice.recognize import process_chunk, recognize, reset_stream_buffer
-from voice.speak import speak, speak_stream
+from voice.listen import AudioStream
+from voice.recognize import StreamingRecognizer
+from voice.speak import StreamingSpeechPlayer, speak
 
 
-WAKE_WORDS = ["edit", "edid", "edyt"]
-STOP_WORDS = {"stop", "stoph", "stopp"}
+WAKE_WORDS = ("edit", "едіт", "едит")
+STOP_WORDS = ("stop", "стоп", "вистачить")
+COMMAND_PREFIXES = (
+    "відкрий",
+    "open",
+    "запусти",
+    "launch",
+    "увімкни",
+    "включи",
+    "вимкни",
+    "выключи",
+    "закрий",
+    "close",
+)
 ACTIVE_TIMEOUT = 300
-last_activation_time = 0
-
-
-def is_active():
-    return time.time() - last_activation_time < ACTIVE_TIMEOUT
 
 
 def _emit(status_callback, status, message=""):
     if status_callback:
         status_callback(status, message)
+
+
+def _contains_wake_word(text):
+    return any(word in text for word in WAKE_WORDS)
+
+
+def _strip_wake_words(text):
+    stripped = text
+    for word in WAKE_WORDS:
+        stripped = stripped.replace(word, " ")
+    return " ".join(stripped.split())
+
+
+def _contains_stop_command(text):
+    tokens = set(text.split())
+    return any(word in tokens for word in STOP_WORDS)
+
+
+def _looks_like_command(text):
+    return any(text.startswith(prefix) for prefix in COMMAND_PREFIXES)
 
 
 def _action_result_to_fallback(result):
@@ -44,252 +72,310 @@ def _action_result_to_fallback(result):
     if status == "success":
         if action == "open_app" and app_name:
             return f"Opening {app_name}."
-        if action == "open_github":
-            return "Opening GitHub."
-        if action == "open_google":
-            return "Opening Google."
-        if action == "open_youtube":
-            return "Opening YouTube."
-        if action == "open_code":
-            return "Opening Visual Studio Code."
-        if action == "open_notepad":
-            return "Opening Notepad."
-        if action == "open_explorer":
-            return "Opening File Explorer."
-        if action == "open_calculator":
-            return "Opening Calculator."
         if action == "stop":
             return "Okay, shutting down."
         return "Done."
 
     if reason == "missing_app_name":
-        return "Please уточни, which app I should open."
+        return "Please tell me which app to open."
     if reason == "ambiguous_app" and app_name:
         return f"Please clarify what exactly you want under the name {app_name}."
     if reason == "app_not_found" and app_name:
         return f"I could not find the app {app_name}."
-    if reason == "unknown_command":
-        return "I do not know that command yet."
-    if reason == "no_actions_to_execute":
-        return "There are no actions to execute right now."
-
     return "Something went wrong, try again."
 
 
-def _contains_stop_command(text):
-    normalized = normalize_text(text).lower().strip()
-    tokens = normalized.split()
+class AssistantRuntime:
+    def __init__(self, stop_event=None, quiet=False, status_callback=None):
+        self.stop_event = stop_event or threading.Event()
+        self.quiet = quiet
+        self.status_callback = status_callback
+        self.audio_stream = AudioStream()
+        self.recognizer = StreamingRecognizer()
+        self.speech_player = StreamingSpeechPlayer()
+        self.recognition_events = queue.Queue()
+        self.gpt_requests = queue.Queue()
+        self.last_activation_time = 0.0
+        self.recognition_thread = None
+        self.gpt_thread = None
+        self.gpt_started_ids = set()
+        self.partial_seen = {}
 
-    if any(token in STOP_WORDS for token in tokens):
-        return True
+    def is_active(self):
+        return time.time() - self.last_activation_time < ACTIVE_TIMEOUT
 
-    return normalized in {"stop stop", "stop-stop"}
+    def activate(self):
+        self.last_activation_time = time.time()
 
+    def start(self):
+        index_source, app_count = ensure_app_index()
+        if not self.quiet:
+            print(f"[index:{index_source}] loaded {app_count} app entries")
+        _emit(self.status_callback, "running", f"Index: {app_count} apps")
 
-def _contains_wake_word(text):
-    normalized = normalize_text(text).lower()
-    return any(wake_word in normalized for wake_word in WAKE_WORDS)
+        self.audio_stream.start()
+        self.speech_player.start()
 
-
-def _remove_wake_words(text):
-    normalized = normalize_text(text).lower()
-    for wake_word in WAKE_WORDS:
-        normalized = normalized.replace(wake_word, " ")
-    return " ".join(normalized.split())
-
-
-def _speak_action_reply(user_text, result, context, status_callback, action_summary=None):
-    response = compose_assistant_reply(
-        user_text=user_text,
-        action_result=result,
-        context=context,
-        action_summary=action_summary,
-    )
-
-    if not response:
-        response = _action_result_to_fallback(result)
-
-    speak(response)
-    _emit(status_callback, "action", response)
-
-
-def _handle_local_intent(local_intent, text_lower, context, status_callback):
-    fallback_response = local_intent.get("response", "Doing it now.")
-
-    if local_intent.get("type") == "chat":
-        response = compose_assistant_reply(
-            user_text=text_lower,
-            fallback_text=fallback_response,
-            context=context,
+        self.recognition_thread = threading.Thread(
+            target=self._recognition_loop,
+            name="speech-recognition",
+            daemon=True,
         )
-        speak(response)
-        _emit(status_callback, "chat", response)
-        return
+        self.gpt_thread = threading.Thread(
+            target=self._gpt_loop,
+            name="gpt-stream",
+            daemon=True,
+        )
 
-    result = execute_actions(local_intent.get("actions", []))
-    remember_phrase_actions(text_lower, local_intent.get("actions", []))
-    response = compose_assistant_reply(
-        user_text=text_lower,
-        action_result=result,
-        context=context,
-        action_summary=local_intent.get("actions", []),
-    )
-    if not response:
-        response = fallback_response or _action_result_to_fallback(result)
-    speak(response)
-    _emit(status_callback, "action", response)
-
-
-def run_streaming_preview(stop_event=None, quiet=False, status_callback=None):
-    stream = start_stream()
-    last_text = ""
-    reset_stream_buffer()
-    _emit(status_callback, "streaming", "Streaming preview active")
-
-    try:
-        while not (stop_event and stop_event.is_set()):
-            chunk = get_chunk(timeout=0.5)
-            text = process_chunk(chunk)
-
-            if not text:
-                continue
-
-            normalized_text = normalize_text(text).lower()
-            if normalized_text == last_text:
-                continue
-
-            last_text = normalized_text
-            if not quiet:
-                print("Partial:", text)
-
-            if len(normalized_text) < 15:
-                continue
-
-            generator = ask_gpt_stream(text)
-            speak_stream(generator)
-            _emit(status_callback, "streaming", text)
-    finally:
-        stop_stream()
-
-
-def run_assistant(stop_event=None, quiet=False, status_callback=None):
-    global last_activation_time
-
-    index_source, app_count = ensure_app_index()
-    if not quiet:
-        print(f"[index:{index_source}] loaded {app_count} app entries")
-    _emit(status_callback, "running", f"Index: {app_count} apps")
-
-    while not (stop_event and stop_event.is_set()):
-        listen_duration = ACTIVE_LISTEN_DURATION if is_active() else IDLE_LISTEN_DURATION
-        audio_data = listen(duration=listen_duration, stop_event=stop_event, quiet=quiet)
-
-        if stop_event and stop_event.is_set():
-            break
+        self.recognition_thread.start()
+        self.gpt_thread.start()
 
         try:
-            text = recognize(audio_data)
-        except Exception as error:
-            print(f"Recognition error: {error}")
-            _emit(status_callback, "error", f"Recognition error: {error}")
-            continue
+            self._event_loop()
+        finally:
+            self.stop()
 
+    def stop(self):
+        self.stop_event.set()
+        try:
+            self.audio_stream.stop()
+        except Exception:
+            pass
+        try:
+            self.speech_player.stop()
+        except Exception:
+            pass
+        _emit(self.status_callback, "stopped", "Assistant stopped")
+
+    def _recognition_loop(self):
+        while not self.stop_event.is_set():
+            chunk = self.audio_stream.read_chunk(timeout=0.1)
+            if chunk is None:
+                continue
+
+            try:
+                events = self.recognizer.process_chunk(chunk)
+            except Exception as error:
+                print(f"Recognition error: {error}")
+                _emit(self.status_callback, "error", f"Recognition error: {error}")
+                continue
+
+            for event in events:
+                self.recognition_events.put(event)
+
+    def _gpt_loop(self):
+        while not self.stop_event.is_set():
+            try:
+                request_item = self.gpt_requests.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            if request_item is None:
+                continue
+
+            utterance_id = request_item["utterance_id"]
+            prompt = request_item["text"]
+            context = request_item["context"]
+
+            generation_id = self.speech_player.begin()
+            try:
+                for delta in ask_gpt_stream(prompt, context=context):
+                    if self.stop_event.is_set():
+                        break
+                    self.speech_player.push_text(generation_id, delta)
+                self.speech_player.end(generation_id)
+            except Exception as error:
+                fallback = compose_assistant_reply(
+                    user_text=prompt,
+                    fallback_text=f"Sorry, something went wrong: {error}",
+                    context=context,
+                )
+                self.speech_player.push_text(generation_id, fallback)
+                self.speech_player.end(generation_id)
+            finally:
+                self.gpt_started_ids.add(utterance_id)
+
+    def _event_loop(self):
+        while not self.stop_event.is_set():
+            try:
+                event = self.recognition_events.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            if event["type"] == "partial":
+                self._handle_partial(event)
+            elif event["type"] == "final":
+                self._handle_final(event)
+
+    def _handle_partial(self, event):
+        text = normalize_text(event["text"]).lower().strip()
         if not text:
-            _emit(status_callback, "listening", "Waiting for wake word")
-            continue
+            return
 
-        original_text = text
-        text_lower = normalize_text(text).lower()
+        if self.partial_seen.get(event["utterance_id"]) == text:
+            return
+        self.partial_seen[event["utterance_id"]] = text
 
-        if not quiet:
+        if not self.quiet:
+            print(f"Partial: {text}")
+        _emit(self.status_callback, "partial", text)
+
+        if _contains_wake_word(text):
+            self.activate()
+
+        clean_text = _strip_wake_words(text)
+        if not clean_text or not self.is_active():
+            return
+
+        if _looks_like_command(clean_text):
+            return
+
+        if extract_open_target(clean_text):
+            return
+
+        if resolve_local_intent(clean_text, get_runtime_context()):
+            return
+
+        if event["utterance_id"] in self.gpt_started_ids:
+            return
+
+        if len(clean_text) < 18:
+            return
+
+        self.gpt_started_ids.add(event["utterance_id"])
+        self.gpt_requests.put(
+            {
+                "utterance_id": event["utterance_id"],
+                "text": clean_text,
+                "context": get_runtime_context(),
+            }
+        )
+
+    def _handle_final(self, event):
+        original_text = event["text"]
+        text = normalize_text(original_text).lower().strip()
+        if not text:
+            return
+
+        if not self.quiet:
             print("You said:", original_text)
-        _emit(status_callback, "heard", original_text)
+        _emit(self.status_callback, "heard", original_text)
 
         context = get_runtime_context()
 
-        if _contains_stop_command(text_lower):
-            last_activation_time = 0
+        if _contains_stop_command(text):
             response = compose_assistant_reply(
-                user_text=text_lower,
+                user_text=text,
                 action_result={"status": "success", "action": "stop"},
                 context=context,
-            )
-            if not response:
-                response = _action_result_to_fallback({"status": "success", "action": "stop"})
+            ) or "Okay, shutting down."
             speak(response)
-            _emit(status_callback, "stopped", "Assistant stopped")
+            self.stop_event.set()
             return
 
-        direct_open_target = extract_open_target(text_lower)
-        if direct_open_target:
-            direct_local_intent = resolve_local_intent(direct_open_target, context)
-            if direct_local_intent:
-                _handle_local_intent(direct_local_intent, direct_open_target, context, status_callback)
-                continue
-
-            result = execute_action("open_app", {"app": direct_open_target})
-            if isinstance(result, dict) and result.get("status") == "success":
-                remember_app_launch(direct_open_target)
-            _speak_action_reply(
-                user_text=text_lower,
-                result=result,
-                context=context,
-                status_callback=status_callback,
-                action_summary=[{"type": "open_app", "app": direct_open_target}],
-            )
-            continue
-
-        if _contains_wake_word(text_lower):
-            last_activation_time = time.time()
-            text_lower = _remove_wake_words(text_lower)
-
-            if not text_lower:
+        if _contains_wake_word(text):
+            self.activate()
+            text = _strip_wake_words(text)
+            if not text:
                 speak("Yes?")
-                _emit(status_callback, "active", "Activated and waiting")
-                continue
+                _emit(self.status_callback, "active", "Activated and waiting")
+                return
 
-        if not is_active():
-            _emit(status_callback, "listening", "Background mode")
-            continue
+        direct_open_target = extract_open_target(text)
+        if direct_open_target:
+            self._handle_direct_open(text, direct_open_target, context)
+            return
 
-        local_intent = resolve_local_intent(text_lower, context)
+        if not self.is_active():
+            _emit(self.status_callback, "listening", "Background mode")
+            return
+
+        local_intent = resolve_local_intent(text, context)
         if local_intent:
-            _handle_local_intent(local_intent, text_lower, context, status_callback)
-            continue
+            self._handle_local_intent(text, local_intent, context)
+            return
 
-        ai_result = ask_ai(text_lower, context=context)
-        result_type = ai_result.get("type")
+        ai_result = ask_ai(text, context=context)
+        if ai_result.get("type") == "command":
+            self._handle_ai_command(text, ai_result, context)
+            return
 
-        if result_type == "command":
-            result = execute_action(ai_result.get("action"), ai_result)
-            if (
-                ai_result.get("action") == "open_app"
-                and ai_result.get("app")
-                and isinstance(result, dict)
-                and result.get("status") == "success"
-            ):
-                remember_app_launch(ai_result["app"])
+        if event["utterance_id"] in self.gpt_started_ids:
+            return
 
-            _speak_action_reply(
-                user_text=text_lower,
-                result=result,
-                context=context,
-                status_callback=status_callback,
-                action_summary=[ai_result],
-            )
-            continue
+        self.gpt_started_ids.add(event["utterance_id"])
+        self.gpt_requests.put(
+            {
+                "utterance_id": event["utterance_id"],
+                "text": text,
+                "context": context,
+            }
+        )
 
-        if result_type == "chat":
-            response = ai_result.get("response", "Something went wrong, try again.")
-            speak(response)
-            _emit(status_callback, "chat", response)
-            continue
+    def _handle_direct_open(self, user_text, app_name, context):
+        direct_local_intent = resolve_local_intent(app_name, context)
+        if direct_local_intent:
+            self._handle_local_intent(app_name, direct_local_intent, context)
+            return
 
-        response = "Something went wrong, try again."
+        result = execute_action("open_app", {"app": app_name})
+        if isinstance(result, dict) and result.get("status") == "success":
+            remember_app_launch(app_name)
+
+        response = compose_assistant_reply(
+            user_text=user_text,
+            action_result=result,
+            context=context,
+            action_summary=[{"type": "open_app", "app": app_name}],
+        ) or _action_result_to_fallback(result)
         speak(response)
-        _emit(status_callback, "chat", response)
+        _emit(self.status_callback, "action", response)
 
-    _emit(status_callback, "stopped", "Assistant stopped")
+    def _handle_local_intent(self, user_text, local_intent, context):
+        if local_intent.get("type") == "chat":
+            response = compose_assistant_reply(
+                user_text=user_text,
+                fallback_text=local_intent.get("response", "Okay."),
+                context=context,
+            )
+            speak(response)
+            _emit(self.status_callback, "chat", response)
+            return
+
+        result = execute_actions(local_intent.get("actions", []))
+        remember_phrase_actions(user_text, local_intent.get("actions", []))
+        response = compose_assistant_reply(
+            user_text=user_text,
+            action_result=result,
+            context=context,
+            action_summary=local_intent.get("actions", []),
+        ) or local_intent.get("response") or _action_result_to_fallback(result)
+        speak(response)
+        _emit(self.status_callback, "action", response)
+
+    def _handle_ai_command(self, user_text, ai_result, context):
+        result = execute_action(ai_result.get("action"), ai_result)
+        if (
+            ai_result.get("action") == "open_app"
+            and ai_result.get("app")
+            and isinstance(result, dict)
+            and result.get("status") == "success"
+        ):
+            remember_app_launch(ai_result["app"])
+
+        response = compose_assistant_reply(
+            user_text=user_text,
+            action_result=result,
+            context=context,
+            action_summary=[ai_result],
+        ) or _action_result_to_fallback(result)
+        speak(response)
+        _emit(self.status_callback, "action", response)
+
+
+def run_assistant(stop_event=None, quiet=False, status_callback=None):
+    runtime = AssistantRuntime(stop_event=stop_event, quiet=quiet, status_callback=status_callback)
+    runtime.start()
 
 
 def main():

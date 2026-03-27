@@ -1,4 +1,7 @@
 import json
+import queue
+import re
+import threading
 from urllib import parse, request
 
 import numpy as np
@@ -18,7 +21,7 @@ TTS_ALIASES = [
     ("github", "гітхаб"),
     ("microsoft store", "майкрософт стор"),
     ("sublime text", "саблайм текст"),
-    ("youtube music", "ютуб м'юзік"),
+    ("youtube music", "ютуб мьюзік"),
     ("youtube", "ютуб"),
     ("telegram", "телеграм"),
     ("discord", "діскорд"),
@@ -52,19 +55,6 @@ def _elevenlabs_sample_rate():
         return int(sample_rate)
     except (AttributeError, ValueError):
         return None
-
-def speak_stream(generator):
-    buffer = ""
-
-    for chunk in generator:
-        buffer += chunk
-
-        if len(buffer) > 30:
-            speak(buffer)
-            buffer = ""
-
-    if buffer:
-        speak(buffer)
 
 
 def _try_elevenlabs(text):
@@ -125,3 +115,117 @@ def speak(text):
             _speak_with_pyttsx3(spoken_text)
         except Exception as fallback_error:
             print(f"Voice error: {fallback_error}")
+
+
+class StreamingSpeechPlayer:
+    def __init__(self, min_chunk_chars=48):
+        self.min_chunk_chars = min_chunk_chars
+        self.queue = queue.Queue()
+        self.stop_event = threading.Event()
+        self.thread = None
+        self.current_generation = 0
+        self.buffer = ""
+
+    def start(self):
+        if self.thread and self.thread.is_alive():
+            return
+        self.stop_event.clear()
+        self.thread = threading.Thread(target=self._worker, name="tts-playback", daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.stop_event.set()
+        self.queue.put(("stop", None, None))
+        if self.thread:
+            self.thread.join(timeout=2.0)
+
+    def begin(self):
+        generation_id = self.current_generation + 1
+        self.current_generation = generation_id
+        self.queue.put(("begin", generation_id, None))
+        return generation_id
+
+    def push_text(self, generation_id, text):
+        if text:
+            self.queue.put(("text", generation_id, text))
+
+    def end(self, generation_id):
+        self.queue.put(("flush", generation_id, None))
+
+    def speak_stream(self, generator):
+        generation_id = self.begin()
+        for chunk in generator:
+            self.push_text(generation_id, chunk)
+        self.end(generation_id)
+
+    def _worker(self):
+        active_generation = 0
+
+        while not self.stop_event.is_set():
+            event_type, generation_id, payload = self.queue.get()
+
+            if event_type == "stop":
+                break
+
+            if event_type == "begin":
+                active_generation = generation_id
+                self.buffer = ""
+                continue
+
+            if generation_id != active_generation:
+                continue
+
+            if event_type == "text":
+                self.buffer += payload
+                for chunk in self._drain_chunks(force=False):
+                    speak(chunk)
+                continue
+
+            if event_type == "flush":
+                for chunk in self._drain_chunks(force=True):
+                    speak(chunk)
+                self.buffer = ""
+
+    def _drain_chunks(self, force=False):
+        chunks = []
+
+        while True:
+            if not self.buffer:
+                break
+
+            split_index = self._find_split_index(force=force)
+            if split_index <= 0:
+                break
+
+            chunk = self.buffer[:split_index].strip()
+            self.buffer = self.buffer[split_index:].lstrip()
+
+            if chunk:
+                chunks.append(chunk)
+
+        return chunks
+
+    def _find_split_index(self, force=False):
+        if force:
+            return len(self.buffer)
+
+        punctuation_match = list(re.finditer(r"[.!?]\s", self.buffer))
+        if punctuation_match:
+            return punctuation_match[0].end()
+
+        if len(self.buffer) < self.min_chunk_chars:
+            return 0
+
+        last_space = self.buffer.rfind(" ")
+        if last_space > 0:
+            return last_space
+
+        return len(self.buffer)
+
+
+_STREAM_PLAYER = StreamingSpeechPlayer()
+
+
+def speak_stream(generator):
+    _STREAM_PLAYER.start()
+    _STREAM_PLAYER.speak_stream(generator)

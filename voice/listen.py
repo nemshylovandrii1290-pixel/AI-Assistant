@@ -1,125 +1,114 @@
-from collections import deque
 import queue
+import threading
+import time
 
 import numpy as np
 import sounddevice as sd
 
-from utils.config import (
-    AMBIENT_CHUNKS,
-    CHUNK_DURATION,
-    DYNAMIC_THRESHOLD_MULTIPLIER,
-    LISTEN_DURATION,
-    MIN_SPEECH_DURATION,
-    PRE_ROLL_DURATION,
-    SAMPLE_RATE,
-    SILENCE_TIMEOUT,
-    SPEECH_THRESHOLD,
-)
+from utils.config import CHUNK_DURATION, SAMPLE_RATE
 
 
-_audio_queue = queue.Queue()
-_stream = None
+class AudioStream:
+    def __init__(self, samplerate=SAMPLE_RATE, channels=1, dtype="int16"):
+        self.samplerate = samplerate
+        self.channels = channels
+        self.dtype = dtype
+        self.chunk_size = max(1, int(self.samplerate * CHUNK_DURATION))
+        self.queue = queue.Queue(maxsize=128)
+        self._stream = None
+        self._lock = threading.Lock()
+        self._started = False
+
+    def _callback(self, indata, frames, time_info, status):
+        if status:
+            return
+
+        chunk = indata.copy()
+        try:
+            self.queue.put_nowait(chunk)
+        except queue.Full:
+            try:
+                self.queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self.queue.put_nowait(chunk)
+            except queue.Full:
+                pass
+
+    def start(self):
+        with self._lock:
+            if self._started:
+                return self
+
+            self._stream = sd.InputStream(
+                samplerate=self.samplerate,
+                channels=self.channels,
+                dtype=self.dtype,
+                blocksize=self.chunk_size,
+                callback=self._callback,
+            )
+            self._stream.start()
+            self._started = True
+        return self
+
+    def stop(self):
+        with self._lock:
+            if not self._started:
+                return
+
+            try:
+                self._stream.stop()
+            finally:
+                self._stream.close()
+                self._stream = None
+                self._started = False
+
+    def read_chunk(self, timeout=0.1):
+        try:
+            return self.queue.get(timeout=timeout)
+        except queue.Empty:
+            return None
+
+    def iter_chunks(self, stop_event=None, timeout=0.1):
+        while not (stop_event and stop_event.is_set()):
+            chunk = self.read_chunk(timeout=timeout)
+            if chunk is not None:
+                yield chunk
+
+
+_default_stream = AudioStream()
 
 
 def start_stream():
-    global _stream
-
-    if _stream is not None:
-        return _stream
-
-    chunk_size = max(1, int(SAMPLE_RATE * CHUNK_DURATION))
-
-    def callback(indata, frames, time_info, status):
-        if status:
-            return
-        _audio_queue.put(indata.copy())
-
-    _stream = sd.InputStream(
-        samplerate=SAMPLE_RATE,
-        channels=1,
-        dtype="int16",
-        blocksize=chunk_size,
-        callback=callback,
-    )
-    _stream.start()
-    return _stream
+    return _default_stream.start()
 
 
-def get_chunk(timeout=0.5):
-    try:
-        return _audio_queue.get(timeout=timeout)
-    except queue.Empty:
-        return None
+def get_chunk(timeout=0.1):
+    return _default_stream.read_chunk(timeout=timeout)
 
 
 def stop_stream():
-    global _stream
+    _default_stream.stop()
 
-    if _stream is None:
-        return
+
+def listen(duration=1.5, stop_event=None, quiet=False):
+    stream = AudioStream().start()
+    chunks = []
+    deadline = time.monotonic() + duration
 
     try:
-        _stream.stop()
-    finally:
-        _stream.close()
-        _stream = None
-
-
-def listen(duration=LISTEN_DURATION, stop_event=None, quiet=False):
-    samplerate = SAMPLE_RATE
-    chunk_size = max(1, int(samplerate * CHUNK_DURATION))
-    max_chunks = max(1, int(duration / CHUNK_DURATION))
-    silence_limit = max(1, int(SILENCE_TIMEOUT / CHUNK_DURATION))
-    min_speech_chunks = max(1, int(MIN_SPEECH_DURATION / CHUNK_DURATION))
-    pre_roll_limit = max(1, int(PRE_ROLL_DURATION / CHUNK_DURATION))
-    recent_chunks = deque(maxlen=pre_roll_limit)
-    ambient_levels = deque(maxlen=max(1, AMBIENT_CHUNKS))
-    captured_chunks = []
-    started = False
-    silence_chunks = 0
-
-    if not quiet:
-        print("Listening...")
-
-    with sd.InputStream(
-        samplerate=samplerate,
-        channels=1,
-        dtype="int16",
-        blocksize=chunk_size,
-    ) as stream:
-        for _ in range(max_chunks):
+        while time.monotonic() < deadline:
             if stop_event and stop_event.is_set():
                 return None
 
-            chunk, _ = stream.read(chunk_size)
-            chunk_copy = chunk.copy()
-            volume = float(np.abs(chunk_copy).mean())
+            chunk = stream.read_chunk(timeout=0.1)
+            if chunk is not None:
+                chunks.append(chunk)
+    finally:
+        stream.stop()
 
-            if not started:
-                recent_chunks.append(chunk_copy)
-                ambient_levels.append(volume)
-
-            ambient_level = max(
-                SPEECH_THRESHOLD,
-                int(np.median(ambient_levels) * DYNAMIC_THRESHOLD_MULTIPLIER),
-            )
-
-            if volume >= ambient_level:
-                if not started:
-                    captured_chunks.extend(recent_chunks)
-                    started = True
-
-                silence_chunks = 0
-                captured_chunks.append(chunk_copy)
-                continue
-
-            if started:
-                captured_chunks.append(chunk_copy)
-                silence_chunks += 1
-                if silence_chunks >= silence_limit and len(captured_chunks) >= min_speech_chunks:
-                    break
-
-    if not captured_chunks:
+    if not chunks:
         return None
 
-    return np.concatenate(captured_chunks, axis=0)
+    return np.concatenate(chunks, axis=0)
