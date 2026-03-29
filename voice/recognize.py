@@ -3,6 +3,7 @@ import os
 import numpy as np
 
 from utils.config import CHUNK_DURATION, SAMPLE_RATE
+from utils.normalize import fix_words
 
 
 _MODEL = None
@@ -41,6 +42,11 @@ def is_valid_text(text):
     return True
 
 
+def _postprocess_text(text):
+    normalized = fix_words(text.strip().lower())
+    return normalized.strip()
+
+
 def recognize(audio_data, samplerate=SAMPLE_RATE):
     if audio_data is None:
         return ""
@@ -63,6 +69,7 @@ def recognize(audio_data, samplerate=SAMPLE_RATE):
         ),
     )
     text = " ".join(segment.text.strip() for segment in segments).strip()
+    text = _postprocess_text(text)
 
     if text:
         print("[speech:uk] recognized")

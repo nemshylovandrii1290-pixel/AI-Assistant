@@ -155,6 +155,9 @@ def _entry_penalty(entry):
     if entry["ext"] == ".url":
         penalty += 0.03
 
+    if path.endswith("\\chrome.exe"):
+        penalty += 0.08
+
     return penalty
 
 
@@ -206,6 +209,9 @@ def _score_match(query, entry):
 
     if entry["ext"] == ".lnk":
         score += 0.03
+
+    if query == "codex" and "code" == base_name:
+        score -= 0.25
 
     score -= _entry_penalty(entry)
     return max(score, 0.0)

@@ -138,6 +138,9 @@ def execute_action(action, data=None):
             if _open_path(path):
                 _log_stage("index", f"resolved '{app_name}' via app index: {path}")
                 return {"status": "success", "action": "open_app", "app": app_name, "source": "index"}
+            if try_special_case_launch(app_name):
+                _log_stage("special", f"resolved '{app_name}' via special fallback after launch failure")
+                return {"status": "success", "action": "open_app", "app": app_name, "source": "special"}
             _log_stage("index", f"resolved '{app_name}' via app index but launch failed: {path}")
             return {
                 "status": "error",

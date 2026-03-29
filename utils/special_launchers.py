@@ -69,8 +69,10 @@ def _find_appx_family_name(app_name):
 
 def _start_uri(uri):
     result = subprocess.run(
-        ["powershell", "-NoProfile", "-Command", f'Start-Process "{uri}"'],
+        ["cmd", "/c", "start", "", uri],
         check=False,
+        capture_output=True,
+        text=True,
     )
     return result.returncode == 0
 
