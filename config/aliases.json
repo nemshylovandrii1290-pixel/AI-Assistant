@@ -1,13 +1,16 @@
 {
-  "дискорд": "Discord.exe",
-  "discord": "Discord.exe",
-
-  "chrome": "chrome.exe",
-  "хром": "chrome.exe",
-
-  "телеграм": "Telegram.exe",
-  "telegram": "Telegram.exe",
-
-  "chatgpt": ["msedge.exe"],
-  "чатгпт": ["msedge.exe"]
+  "дискорд": ["Discord.exe", "Discord"],
+  "discord": ["Discord.exe", "Discord"],
+  "телеграм": ["Telegram.exe", "Telegram"],
+  "telegram": ["Telegram.exe", "Telegram"],
+  "chrome": ["chrome.exe", "chrome"],
+  "хром": ["chrome.exe", "chrome"],
+  "google chrome": ["chrome.exe", "chrome"],
+  "steam": ["steam.exe", "steam"],
+  "стім": ["steam.exe", "steam"],
+  "chatgpt": ["ChatGPT.exe", "ChatGPT"],
+  "чатгпт": ["ChatGPT.exe", "ChatGPT"],
+  "code": ["Code.exe", "Code"],
+  "vscode": ["Code.exe", "Code"],
+  "visual studio code": ["Code.exe", "Code"]
 }

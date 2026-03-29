@@ -12,6 +12,15 @@ except ImportError:
     gw = None
 
 
+def _normalize_process_name(name):
+    if not name:
+        return ""
+    lowered = name.lower().strip()
+    if lowered.endswith(".exe"):
+        lowered = lowered[:-4]
+    return lowered
+
+
 def close_by_window(app_name):
     if gw is None:
         return False
@@ -31,16 +40,20 @@ def close_by_psutil(process_name):
     if psutil is None:
         return False
 
+    targets = process_name if isinstance(process_name, list) else [process_name]
+
     try:
-        targets = process_name if isinstance(process_name, list) else [process_name]
         for proc in psutil.process_iter(["name"]):
             name = proc.info.get("name")
             if not name:
                 continue
             for target in targets:
-                if name.lower() == target.lower():
-                    proc.terminate()
-                    return True
+                if _normalize_process_name(name) == _normalize_process_name(target):
+                    try:
+                        proc.terminate()
+                        return True
+                    except Exception as error:
+                        print(f"[close:psutil] {error}")
     except Exception as error:
         print(f"[close:psutil] {error}")
     return False
