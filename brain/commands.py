@@ -76,18 +76,21 @@ def _open_path(path):
         return True
     except OSError:
         if path.lower().endswith((".lnk", ".url")):
-            explorer_result = subprocess.run(["explorer", path], check=False)
+            explorer_result = subprocess.run(
+                ["explorer", path],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
             if explorer_result.returncode == 0:
                 return True
 
-        powershell_result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", f'Start-Process -FilePath "{path}"'],
+        cmd_result = subprocess.run(
+            ["cmd", "/c", "start", "", path],
             check=False,
+            capture_output=True,
+            text=True,
         )
-        if powershell_result.returncode == 0:
-            return True
-
-        cmd_result = subprocess.run(["cmd", "/c", "start", "", path], check=False)
         return cmd_result.returncode == 0
 
 
@@ -131,9 +134,18 @@ def execute_action(action, data=None):
             }
 
         path = find_app(app_name)
-        if path and _open_path(path):
-            _log_stage("index", f"resolved '{app_name}' via app index: {path}")
-            return {"status": "success", "action": "open_app", "app": app_name, "source": "index"}
+        if path:
+            if _open_path(path):
+                _log_stage("index", f"resolved '{app_name}' via app index: {path}")
+                return {"status": "success", "action": "open_app", "app": app_name, "source": "index"}
+            _log_stage("index", f"resolved '{app_name}' via app index but launch failed: {path}")
+            return {
+                "status": "error",
+                "reason": "launch_failed",
+                "app": app_name,
+                "path": path,
+                "source": "index",
+            }
 
         if try_special_case_launch(app_name):
             _log_stage("special", f"resolved '{app_name}' via special launcher")

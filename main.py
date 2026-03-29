@@ -98,6 +98,8 @@ def _action_result_to_fallback(result):
         return "Скажи, будь ласка, який саме додаток відкрити."
     if reason == "ambiguous_app" and app_name:
         return f"Уточни, будь ласка, що саме ти маєш на увазі під {app_name}."
+    if reason == "launch_failed" and app_name:
+        return f"Знайшов {app_name}, але не вдалося запустити. Спробуй ще раз."
     if reason == "app_not_found" and app_name:
         return f"Не вдалося знайти додаток {app_name}."
     return "Щось пішло не так, спробуй ще раз."

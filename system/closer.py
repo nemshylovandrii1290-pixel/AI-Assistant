@@ -1,3 +1,4 @@
+import re
 import subprocess
 import os
 
@@ -42,6 +43,8 @@ def close_by_psutil(process_name):
 
     targets = process_name if isinstance(process_name, list) else [process_name]
 
+    closed = False
+
     try:
         for proc in psutil.process_iter(["name"]):
             name = proc.info.get("name")
@@ -51,12 +54,16 @@ def close_by_psutil(process_name):
                 if _normalize_process_name(name) == _normalize_process_name(target):
                     try:
                         proc.terminate()
-                        return True
+                        proc.wait(timeout=1)
+                        closed = True
+                    except psutil.TimeoutExpired:
+                        proc.kill()
+                        closed = True
                     except Exception as error:
                         print(f"[close:psutil] {error}")
     except Exception as error:
         print(f"[close:psutil] {error}")
-    return False
+    return closed
 
 
 def close_by_taskkill_image(app_name):
