@@ -1,4 +1,5 @@
 import os
+import sys
 
 import numpy as np
 
@@ -9,10 +10,34 @@ from utils.normalize import fix_words
 _MODEL = None
 
 
+def resource_path(relative_path):
+    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
+    return os.path.join(base_path, relative_path)
+
+
+def _patch_faster_whisper_assets():
+    try:
+        import faster_whisper.utils as fw_utils
+        import faster_whisper.vad as fw_vad
+    except ImportError:
+        return
+
+    def _assets_path():
+        bundled_assets = resource_path(os.path.join("faster_whisper", "assets"))
+        if os.path.exists(bundled_assets):
+            return bundled_assets
+        return os.path.join(os.path.dirname(os.path.abspath(fw_utils.__file__)), "assets")
+
+    fw_utils.get_assets_path = _assets_path
+    fw_vad.get_assets_path = _assets_path
+
+
 def _get_model():
     global _MODEL
     if _MODEL is None:
         from faster_whisper import WhisperModel
+
+        _patch_faster_whisper_assets()
 
         model_name = os.getenv("WHISPER_MODEL", "small")
         model_device = os.getenv("WHISPER_DEVICE", "cpu")
