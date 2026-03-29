@@ -1,6 +1,13 @@
 {
   "дискорд": "Discord.exe",
+  "discord": "Discord.exe",
+
   "chrome": "chrome.exe",
+  "хром": "chrome.exe",
+
   "телеграм": "Telegram.exe",
-  "chatgpt": "ChatGPT.exe"
+  "telegram": "Telegram.exe",
+
+  "chatgpt": ["msedge.exe"],
+  "чатгпт": ["msedge.exe"]
 }

@@ -32,36 +32,48 @@ def close_by_psutil(process_name):
         return False
 
     try:
+        targets = process_name if isinstance(process_name, list) else [process_name]
         for proc in psutil.process_iter(["name"]):
             name = proc.info.get("name")
-            if name and process_name.lower() == name.lower():
-                proc.terminate()
-                return True
+            if not name:
+                continue
+            for target in targets:
+                if name.lower() == target.lower():
+                    proc.terminate()
+                    return True
     except Exception as error:
         print(f"[close:psutil] {error}")
     return False
 
 
 def close_by_taskkill_image(app_name):
-    process_name = app_name if app_name.lower().endswith(".exe") else f"{app_name}.exe"
-    result = subprocess.run(
-        ["taskkill", "/im", process_name],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return result.returncode == 0
+    targets = app_name if isinstance(app_name, list) else [app_name]
+    for target in targets:
+        process_name = target if target.lower().endswith(".exe") else f"{target}.exe"
+        result = subprocess.run(
+            ["taskkill", "/im", process_name],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return True
+    return False
 
 
 def close_by_taskkill_force(app_name):
-    process_name = app_name if app_name.lower().endswith(".exe") else f"{app_name}.exe"
-    result = subprocess.run(
-        ["taskkill", "/f", "/t", "/im", process_name],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return result.returncode == 0
+    targets = app_name if isinstance(app_name, list) else [app_name]
+    for target in targets:
+        process_name = target if target.lower().endswith(".exe") else f"{target}.exe"
+        result = subprocess.run(
+            ["taskkill", "/f", "/t", "/im", process_name],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return True
+    return False
 
 
 def smart_close(app_name, path=None, aliases=None):
@@ -71,7 +83,15 @@ def smart_close(app_name, path=None, aliases=None):
     resolved_name = aliases.get(app_name, app_name) if aliases else app_name
     process_name = os.path.basename(path) if path else resolved_name
 
-    if close_by_window(resolved_name):
+    if isinstance(resolved_name, list):
+        process_names = resolved_name
+    else:
+        process_names = [resolved_name]
+
+    if path and process_name not in process_names:
+        process_names = [process_name, *process_names]
+
+    if close_by_window(app_name):
         print(f"[close:window] closed '{resolved_name}'")
         return {
             "status": "success",
@@ -81,7 +101,7 @@ def smart_close(app_name, path=None, aliases=None):
             "source": "window",
         }
 
-    if close_by_psutil(process_name):
+    if close_by_psutil(process_names):
         print(f"[close:psutil] closed '{process_name}'")
         return {
             "status": "success",
@@ -91,7 +111,7 @@ def smart_close(app_name, path=None, aliases=None):
             "source": "psutil",
         }
 
-    if close_by_taskkill_image(process_name):
+    if close_by_taskkill_image(process_names):
         print(f"[close:taskkill] closed '{process_name}'")
         return {
             "status": "success",
@@ -101,7 +121,7 @@ def smart_close(app_name, path=None, aliases=None):
             "source": "taskkill",
         }
 
-    if close_by_taskkill_force(process_name):
+    if close_by_taskkill_force(process_names):
         print(f"[close:force] closed '{process_name}'")
         return {
             "status": "success",
@@ -111,7 +131,7 @@ def smart_close(app_name, path=None, aliases=None):
             "source": "force",
         }
 
-    print(f"[close:failback] app '{resolved_name}' not found")
+    print(f"[close:failback] app '{app_name}' not found")
     return {
         "status": "error",
         "reason": "app_not_found",
