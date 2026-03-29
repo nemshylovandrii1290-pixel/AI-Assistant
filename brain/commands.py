@@ -5,7 +5,7 @@ import subprocess
 import webbrowser
 
 from system.closer import smart_close
-from utils.app_finder import find_app
+from utils.app_finder import find_app, find_start_app
 from utils.commands_config import COMMANDS
 from utils.normalize import normalize_text
 from utils.special_launchers import try_special_case_launch
@@ -67,7 +67,8 @@ def handle_close(text, context=None):
     original_app_name = normalize_text(_extract_close_target(text))
     aliases = (context or {}).get("aliases") or _load_aliases()
     path = find_app(original_app_name)
-    return smart_close(original_app_name, path=path, aliases=aliases)
+    start_app = find_start_app(original_app_name)
+    return smart_close(original_app_name, path=path, aliases=aliases, start_app=start_app)
 
 
 def _open_path(path):
@@ -133,6 +134,11 @@ def execute_action(action, data=None):
                 "source": "index",
             }
 
+        start_app = find_start_app(app_name)
+        if start_app and try_special_case_launch(start_app["name"]):
+            _log_stage("special", f"resolved '{app_name}' via start apps: {start_app['app_id']}")
+            return {"status": "success", "action": "open_app", "app": app_name, "source": "start_apps"}
+
         path = find_app(app_name)
         if path:
             if _open_path(path):
@@ -164,7 +170,8 @@ def execute_action(action, data=None):
         app_name = normalize_text((data or {}).get("app", ""))
         aliases = _load_aliases()
         path = find_app(app_name)
-        return smart_close(app_name, path=path, aliases=aliases)
+        start_app = find_start_app(app_name)
+        return smart_close(app_name, path=path, aliases=aliases, start_app=start_app)
 
     if not command:
         return {"status": "error", "reason": "unknown_command"}

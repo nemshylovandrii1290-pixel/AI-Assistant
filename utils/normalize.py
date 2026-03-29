@@ -13,6 +13,8 @@ PHRASE_REPLACEMENTS = [
     ("саблайм текст", "sublime text"),
     ("кьют лок", "cute lock"),
     ("кют лок", "cute lock"),
+    ("кьют лог", "cute log"),
+    ("кют лог", "cute log"),
     ("qt lock", "cute lock"),
     ("qute lock", "cute lock"),
     ("cut lock", "cute lock"),

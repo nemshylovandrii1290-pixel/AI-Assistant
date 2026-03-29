@@ -4,6 +4,7 @@ import re
 import subprocess
 
 from difflib import SequenceMatcher
+from difflib import get_close_matches
 
 from utils.normalize import normalize_text
 
@@ -60,6 +61,8 @@ BAD_EXECUTABLE_TOKENS = {
     "support",
     "telemetry",
     "test",
+    "tool",
+    "tweak",
     "uninstall",
     "update",
     "updater",
@@ -72,7 +75,9 @@ CACHE_READY = False
 CACHE_DIR = os.path.join(os.getcwd(), ".cache")
 APP_CACHE_FILE = os.path.join(CACHE_DIR, "app_index.json")
 LAST_CACHE_SOURCE = "none"
-CACHE_VERSION = 2
+START_APP_CACHE = []
+START_APP_FILE = os.path.join(CACHE_DIR, "start_apps.json")
+CACHE_VERSION = 3
 
 
 def _clean_variant(text):
@@ -130,6 +135,19 @@ def _name_variants(file_name, root):
 
 def _tokens(text):
     return [token for token in re.split(r"[^a-z0-9а-яіїєґ]+", text.lower()) if token]
+
+
+def _is_false_positive(query, entry):
+    path = entry["path"].lower()
+    base_name = entry["base_name"]
+    if query == "codec" and (
+        "tweak" in path
+        or "tool" in path
+        or "tweak" in base_name
+        or "tool" in base_name
+    ):
+        return True
+    return False
 
 
 def _entry_penalty(entry):
@@ -213,6 +231,9 @@ def _score_match(query, entry):
     if query == "codex" and "code" == base_name:
         score -= 0.25
 
+    if query == "codec" and ("tweak" in base_name or "tool" in base_name):
+        score -= 0.3
+
     score -= _entry_penalty(entry)
     return max(score, 0.0)
 
@@ -237,6 +258,51 @@ def _deserialize_entry(entry):
     }
 
 
+def _run_powershell_json(script):
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-Command", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+
+
+def _load_start_apps():
+    script = """
+    Get-StartApps |
+        Select-Object Name, AppID |
+        ConvertTo-Json -Compress
+    """
+    data = _run_powershell_json(script)
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        return []
+
+    apps = []
+    for item in data:
+        name = (item.get("Name") or "").strip()
+        app_id = (item.get("AppID") or "").strip()
+        if not name or not app_id:
+            continue
+        normalized_name = _clean_variant(name)
+        apps.append(
+            {
+                "name": name,
+                "app_id": app_id,
+                "normalized_name": normalized_name,
+                "tokens": _tokens(normalized_name),
+            }
+        )
+    return apps
+
+
 def _is_cache_valid():
     if not os.path.exists(APP_CACHE_FILE):
         return False
@@ -251,7 +317,7 @@ def _is_cache_valid():
 
 
 def _load_cache_from_disk():
-    global APP_CACHE, CACHE_READY, LAST_CACHE_SOURCE
+    global APP_CACHE, CACHE_READY, LAST_CACHE_SOURCE, START_APP_CACHE
 
     if not _is_cache_valid():
         return False
@@ -266,6 +332,7 @@ def _load_cache_from_disk():
         return False
 
     APP_CACHE = [_deserialize_entry(entry) for entry in data.get("entries", [])]
+    START_APP_CACHE = data.get("start_apps", [])
     CACHE_READY = True
     LAST_CACHE_SOURCE = "disk"
     return True
@@ -279,6 +346,7 @@ def _save_cache_to_disk():
             {
                 "version": CACHE_VERSION,
                 "entries": [_serialize_entry(entry) for entry in APP_CACHE],
+                "start_apps": START_APP_CACHE,
             },
             cache_file,
             ensure_ascii=False,
@@ -286,10 +354,11 @@ def _save_cache_to_disk():
 
 
 def _rebuild_cache():
-    global APP_CACHE, CACHE_READY, LAST_CACHE_SOURCE
+    global APP_CACHE, CACHE_READY, LAST_CACHE_SOURCE, START_APP_CACHE
 
     APP_CACHE = []
     CACHE_READY = False
+    START_APP_CACHE = _load_start_apps()
 
     for base in SEARCH_PATHS:
         if not base or not os.path.exists(base):
@@ -337,18 +406,30 @@ def find_app(app_name):
     if not app_name:
         return None
 
+    if app_name == "codec":
+        for entry in APP_CACHE:
+            if entry["base_name"] == "codec":
+                return entry["path"]
+        return None
+
     query_tokens = _tokens(app_name)
 
     for entry in APP_CACHE:
+        if _is_false_positive(app_name, entry):
+            continue
         if app_name == entry["base_name"] and _entry_penalty(entry) < 0.1:
             return entry["path"]
 
     for entry in APP_CACHE:
+        if _is_false_positive(app_name, entry):
+            continue
         base_tokens = _tokens(entry["base_name"])
         if query_tokens and base_tokens[: len(query_tokens)] == query_tokens and _entry_penalty(entry) < 0.12:
             return entry["path"]
 
     for entry in APP_CACHE:
+        if _is_false_positive(app_name, entry):
+            continue
         if entry["ext"] in {".lnk", ".url"} and app_name in entry["names"]:
             return entry["path"]
 
@@ -371,12 +452,67 @@ def find_app(app_name):
     best_path = None
 
     for entry in APP_CACHE:
+        if _is_false_positive(app_name, entry):
+            continue
         score = _score_match(app_name, entry)
         if score > best_score:
             best_score = score
             best_path = entry["path"]
 
     if best_score >= 0.78:
+        if app_name == "codec" and best_path and any(token in best_path.lower() for token in ("tweak", "tool")):
+            return None
         return best_path
+
+    candidate_names = [entry["base_name"] for entry in APP_CACHE]
+    fuzzy = get_close_matches(app_name, candidate_names, n=1, cutoff=0.8)
+    if fuzzy:
+        matched_name = fuzzy[0]
+        for entry in APP_CACHE:
+            if _is_false_positive(app_name, entry):
+                continue
+            if entry["base_name"] == matched_name:
+                return entry["path"]
+
+    return None
+
+
+def find_start_app(app_name):
+    normalized_name = normalize_text(app_name.lower()).strip()
+    ensure_app_index()
+
+    if not normalized_name:
+        return None
+
+    for app in START_APP_CACHE:
+        if normalized_name == app["normalized_name"]:
+            return app
+
+    query_tokens = _tokens(normalized_name)
+    for app in START_APP_CACHE:
+        if query_tokens and app["tokens"][: len(query_tokens)] == query_tokens:
+            return app
+
+    best_score = 0.0
+    best_app = None
+    for app in START_APP_CACHE:
+        score = SequenceMatcher(None, normalized_name, app["normalized_name"]).ratio()
+        if score > best_score:
+            best_score = score
+            best_app = app
+
+    if best_score >= 0.72:
+        return best_app
+
+    close = get_close_matches(
+        normalized_name,
+        [app["normalized_name"] for app in START_APP_CACHE],
+        n=1,
+        cutoff=0.72,
+    )
+    if close:
+        for app in START_APP_CACHE:
+            if app["normalized_name"] == close[0]:
+                return app
 
     return None

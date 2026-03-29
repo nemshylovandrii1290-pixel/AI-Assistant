@@ -50,6 +50,11 @@ def _find_start_app_id(app_name):
     return None
 
 
+def find_start_app_id(app_name):
+    normalized_name = normalize_text(app_name)
+    return _find_start_app_id(normalized_name)
+
+
 def _find_appx_family_name(app_name):
     query = app_name.replace('"', '`"')
     script = f"""

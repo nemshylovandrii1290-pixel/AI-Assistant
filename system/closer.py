@@ -50,8 +50,14 @@ def close_by_psutil(process_name):
             name = proc.info.get("name")
             if not name:
                 continue
+            normalized_name = _normalize_process_name(name)
             for target in targets:
-                if _normalize_process_name(name) == _normalize_process_name(target):
+                normalized_target = _normalize_process_name(target)
+                if (
+                    normalized_name == normalized_target
+                    or normalized_target in normalized_name
+                    or normalized_name in normalized_target
+                ):
                     try:
                         proc.terminate()
                         proc.wait(timeout=1)
@@ -96,7 +102,7 @@ def close_by_taskkill_force(app_name):
     return False
 
 
-def smart_close(app_name, path=None, aliases=None):
+def smart_close(app_name, path=None, aliases=None, start_app=None):
     if not app_name:
         return {"status": "error", "reason": "missing_app_name"}
 
@@ -110,6 +116,12 @@ def smart_close(app_name, path=None, aliases=None):
 
     if path and process_name not in process_names:
         process_names = [process_name, *process_names]
+
+    if start_app:
+        process_names = [start_app.get("name", app_name), *process_names]
+        app_id = start_app.get("app_id", "")
+        if app_id:
+            process_names.extend(part for part in re.split(r"[!._]", app_id) if len(part) > 3)
 
     if close_by_window(app_name):
         print(f"[close:window] closed '{resolved_name}'")
