@@ -1,5 +1,6 @@
 {
   "дискорд": "Discord.exe",
   "chrome": "chrome.exe",
-  "телеграм": "Telegram.exe"
+  "телеграм": "Telegram.exe",
+  "chatgpt": "ChatGPT.exe"
 }

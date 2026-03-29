@@ -64,9 +64,10 @@ def _extract_close_target(text):
 
 
 def handle_close(text, context=None):
-    app_name = _extract_close_target(text)
+    original_app_name = normalize_text(_extract_close_target(text))
     aliases = (context or {}).get("aliases") or _load_aliases()
-    return smart_close(app_name, aliases=aliases)
+    path = find_app(original_app_name)
+    return smart_close(original_app_name, path=path, aliases=aliases)
 
 
 def _open_path(path):
@@ -146,7 +147,9 @@ def execute_action(action, data=None):
 
     if action == "close_app":
         app_name = normalize_text((data or {}).get("app", ""))
-        return smart_close(app_name, aliases=_load_aliases())
+        aliases = _load_aliases()
+        path = find_app(app_name)
+        return smart_close(app_name, path=path, aliases=aliases)
 
     if not command:
         return {"status": "error", "reason": "unknown_command"}

@@ -126,7 +126,7 @@ def resolve_local_intent(text, context):
         }
 
     close_target = _extract_close_app(normalized_text)
-    if close_target and find_app(close_target):
+    if close_target:
         return {
             "type": "multi_action",
             "source": "close",
