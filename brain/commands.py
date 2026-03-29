@@ -1,8 +1,10 @@
+import json
 import os
 import shutil
 import subprocess
 import webbrowser
 
+from system.closer import smart_close
 from utils.app_finder import find_app
 from utils.commands_config import COMMANDS
 from utils.normalize import normalize_text
@@ -21,6 +23,50 @@ AMBIGUOUS_APP_NAMES = {
     "microsoft",
     "office",
 }
+
+CLOSE_PREFIXES = (
+    "закрий",
+    "закрити",
+    "close",
+    "kill",
+    "вимкни",
+    "выключи",
+)
+
+_ALIASES = None
+
+
+def _load_aliases():
+    global _ALIASES
+    if _ALIASES is not None:
+        return _ALIASES
+
+    aliases_path = os.path.join("config", "aliases.json")
+    if not os.path.exists(aliases_path):
+        _ALIASES = {}
+        return _ALIASES
+
+    try:
+        with open(aliases_path, "r", encoding="utf-8") as file:
+            _ALIASES = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        _ALIASES = {}
+
+    return _ALIASES
+
+
+def _extract_close_target(text):
+    normalized = normalize_text(text)
+    for prefix in CLOSE_PREFIXES:
+        if normalized.startswith(f"{prefix} "):
+            return normalized[len(prefix):].strip()
+    return normalized.strip()
+
+
+def handle_close(text, context=None):
+    app_name = _extract_close_target(text)
+    aliases = (context or {}).get("aliases") or _load_aliases()
+    return smart_close(app_name, aliases=aliases)
 
 
 def _open_path(path):
@@ -80,7 +126,7 @@ def execute_action(action, data=None):
                 "status": "error",
                 "reason": "ambiguous_app",
                 "app": app_name,
-                "source": "index"
+                "source": "index",
             }
 
         path = find_app(app_name)
@@ -98,6 +144,10 @@ def execute_action(action, data=None):
         _log_stage("failback", f"app '{app_name}' not found")
         return {"status": "error", "reason": "app_not_found", "app": app_name}
 
+    if action == "close_app":
+        app_name = normalize_text((data or {}).get("app", ""))
+        return smart_close(app_name, aliases=_load_aliases())
+
     if not command:
         return {"status": "error", "reason": "unknown_command"}
 
@@ -106,7 +156,7 @@ def execute_action(action, data=None):
         return {
             "status": "success",
             "action": action,
-            "meta": data
+            "meta": data,
         }
 
     if command["kind"] == "command":
@@ -114,7 +164,7 @@ def execute_action(action, data=None):
         return {
             "status": "success",
             "action": action,
-            "meta": data
+            "meta": data,
         }
 
     return {"status": "error", "reason": "unknown_command"}

@@ -1,4 +1,15 @@
 COMMANDS = {
+    "close_app": {
+        "description": "Закрити встановлений додаток або програму на комп'ютері за назвою",
+        "response": None,
+        "kind": "app",
+        "target": None,
+        "examples": [
+            "закрий discord",
+            "закрий telegram",
+            "close steam"
+        ]
+    },
     "open_app": {
         "description": "Відкрити встановлений додаток на комп'ютері за назвою",
         "response": None,

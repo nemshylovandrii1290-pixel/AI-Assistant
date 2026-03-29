@@ -14,7 +14,6 @@ from voice.listen import AudioStream
 from voice.recognize import StreamingRecognizer, is_valid_text
 from voice.speak import StreamingSpeechPlayer, speak
 
-
 WAKE_WORDS = ("edit", "едіт", "едит")
 STOP_WORDS = ("stop", "стоп", "вистачить")
 YES_WORDS = ("так", "ага", "да", "yes", "угу")
@@ -89,6 +88,8 @@ def _action_result_to_fallback(result):
     if status == "success":
         if action == "open_app" and app_name:
             return f"Відкриваю {app_name}."
+        if action == "close_app" and app_name:
+            return f"Закриваю {app_name}."
         if action == "stop":
             return "Добре, чекаю на тебе."
         return "Готово."

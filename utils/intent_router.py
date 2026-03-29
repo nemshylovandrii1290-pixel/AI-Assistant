@@ -19,6 +19,15 @@ DISABLE_WORDS = (
     "disable",
 )
 
+CLOSE_WORDS = (
+    "закрий",
+    "закрити",
+    "close",
+    "kill",
+    "вимкни",
+    "выключи",
+)
+
 
 def _contains_trigger(text, triggers):
     return contains_phrase(text, triggers)
@@ -30,6 +39,13 @@ def _is_disable_request(text):
 
 def _clone_actions(actions):
     return [dict(action) for action in actions]
+
+
+def _extract_close_app(text):
+    for word in CLOSE_WORDS:
+        if text.startswith(f"{word} "):
+            return text[len(word):].strip()
+    return ""
 
 
 def _build_music_actions(context):
@@ -107,6 +123,15 @@ def resolve_local_intent(text, context):
             "source": "memory",
             "response": "Зараз зроблю так, як ти зазвичай просиш.",
             "actions": learned_actions,
+        }
+
+    close_target = _extract_close_app(normalized_text)
+    if close_target and find_app(close_target):
+        return {
+            "type": "multi_action",
+            "source": "close",
+            "response": f"Закриваю {close_target}.",
+            "actions": [{"type": "command", "action": "close_app", "app": close_target}],
         }
 
     return None
