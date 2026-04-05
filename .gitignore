@@ -3,3 +3,5 @@ __pycache__/
 *.wav
 .cache/
 debug.log
+build/
+dist/

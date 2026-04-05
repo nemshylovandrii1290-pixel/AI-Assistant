@@ -1,5 +1,8 @@
 import json
 import re
+import os
+import sys
+from dotenv import load_dotenv
 
 from openai import OpenAI
 
@@ -58,8 +61,15 @@ STREAM_REPLY_PROMPT = """
 Не описуй внутрішні кроки або інструменти.
 """.strip()
 
+def get_app_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+env_path = os.path.join(get_app_dir(), ".env")
+load_dotenv(env_path)
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 conversation = []
 
 
