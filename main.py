@@ -13,6 +13,8 @@ from utils.normalize import normalize_text
 from voice.listen import AudioStream
 from voice.recognize import StreamingRecognizer, is_valid_text
 from voice.speak import StreamingSpeechPlayer, speak
+from brain.context_tracker import ContextTracker
+from brain.scenario_manager import ScenarioManager
 
 WAKE_WORDS = ("edit", "едіт", "едит")
 STOP_WORDS = ("stop", "стоп", "вистачить")
@@ -31,6 +33,7 @@ COMMAND_PREFIXES = (
 )
 INCOMPLETE_ENDINGS = ("якийсь", "якась", "якесь", "some", "який", "яку", "what")
 ACTIVE_TIMEOUT = 90
+NO_WORDS = ("ні", "не", "no", "не треба")
 
 
 def _emit(status_callback, status, message=""):
@@ -60,6 +63,10 @@ def _is_plain_wake_word(text):
 
 def _is_yes_answer(text):
     return text.strip() in YES_WORDS
+
+
+def _is_no_answer(text):
+    return text.strip() in NO_WORDS
 
 
 def _looks_incomplete(text):
@@ -123,6 +130,9 @@ class AssistantRuntime:
         self.state = "SLEEP"
         self.last_active_time = 0.0
         self.last_question = None
+        self.tracker = ContextTracker()
+        self.tracker.start_tracking()
+        self.scenario_manager = ScenarioManager()
 
     def activate(self):
         self.state = "ACTIVE"
@@ -233,6 +243,13 @@ class AssistantRuntime:
 
     def _event_loop(self):
         while not self.stop_event.is_set():
+            for process_name in self.tracker.detect_new_apps():
+                app_name = self.tracker.to_app_name(process_name)
+                prompt = self.scenario_manager.queue_app_offer(app_name, source="tracker")
+                if prompt:
+                    speak(prompt)
+                    _emit(self.status_callback, "scenario", prompt)
+
             self._check_timeout()
             try:
                 event = self.recognition_events.get(timeout=0.1)
@@ -277,6 +294,22 @@ class AssistantRuntime:
             return
 
         self._refresh_activity()
+
+        if self.scenario_manager.has_pending_offer():
+            if _is_yes_answer(text):
+                confirmed = self.scenario_manager.confirm_pending()
+                if confirmed:
+                    scenario_name, app_name = confirmed
+                    response = f"Добре, додала {app_name} в сценарій {scenario_name}."
+                    speak(response)
+                    _emit(self.status_callback, "scenario", response)
+                return
+            if _is_no_answer(text):
+                self.scenario_manager.reject_pending()
+                response = "Добре, не додаю."
+                speak(response)
+                _emit(self.status_callback, "scenario", response)
+                return
 
         if _is_yes_answer(text) and self.last_question == "fact":
             speak("Ще один факт: восьминоги мають три серця.")
@@ -324,6 +357,11 @@ class AssistantRuntime:
         result = execute_action("open_app", {"app": app_name})
         if isinstance(result, dict) and result.get("status") == "success":
             remember_app_launch(app_name)
+            prompt = self.scenario_manager.queue_app_offer(app_name, source="direct")
+            if prompt:
+                speak(prompt)
+                _emit(self.status_callback, "scenario", prompt)
+                return
 
         response = compose_assistant_reply(
             user_text=user_text,
@@ -345,13 +383,19 @@ class AssistantRuntime:
             _emit(self.status_callback, "chat", response)
             return
 
-        result = execute_actions(local_intent.get("actions", []))
-        remember_phrase_actions(user_text, local_intent.get("actions", []))
+        actions = local_intent.get("actions", [])
+        scenario_name = local_intent.get("scenario")
+        if scenario_name:
+            self.scenario_manager.activate(scenario_name)
+            actions = self.scenario_manager.get_actions(scenario_name)
+
+        result = execute_actions(actions)
+        remember_phrase_actions(user_text, actions)
         response = compose_assistant_reply(
             user_text=user_text,
             action_result=result,
             context=context,
-            action_summary=local_intent.get("actions", []),
+            action_summary=actions,
         ) or local_intent.get("response") or _action_result_to_fallback(result)
         speak(response)
         _emit(self.status_callback, "action", response)
@@ -365,6 +409,11 @@ class AssistantRuntime:
             and result.get("status") == "success"
         ):
             remember_app_launch(ai_result["app"])
+            prompt = self.scenario_manager.queue_app_offer(ai_result["app"], source="ai")
+            if prompt:
+                speak(prompt)
+                _emit(self.status_callback, "scenario", prompt)
+                return
 
         response = compose_assistant_reply(
             user_text=user_text,
