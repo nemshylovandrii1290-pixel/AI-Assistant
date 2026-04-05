@@ -77,7 +77,16 @@ APP_CACHE_FILE = os.path.join(CACHE_DIR, "app_index.json")
 LAST_CACHE_SOURCE = "none"
 START_APP_CACHE = []
 START_APP_FILE = os.path.join(CACHE_DIR, "start_apps.json")
-CACHE_VERSION = 3
+CACHE_VERSION = 4
+
+
+def _is_valid_start_app_entry(app):
+    app_id = (app or {}).get("app_id", "")
+    return bool(app_id) and not app_id.lower().startswith(("http://", "https://"))
+
+
+def _sanitize_start_apps(apps):
+    return [app for app in apps if isinstance(app, dict) and _is_valid_start_app_entry(app)]
 
 
 def _clean_variant(text):
@@ -171,7 +180,7 @@ def _entry_penalty(entry):
         penalty += 0.18
 
     if entry["ext"] == ".url":
-        penalty += 0.03
+        penalty += 0.35
 
     if path.endswith("\\chrome.exe"):
         penalty += 0.08
@@ -291,6 +300,8 @@ def _load_start_apps():
         app_id = (item.get("AppID") or "").strip()
         if not name or not app_id:
             continue
+        if app_id.lower().startswith(("http://", "https://")):
+            continue
         normalized_name = _clean_variant(name)
         apps.append(
             {
@@ -332,7 +343,7 @@ def _load_cache_from_disk():
         return False
 
     APP_CACHE = [_deserialize_entry(entry) for entry in data.get("entries", [])]
-    START_APP_CACHE = data.get("start_apps", [])
+    START_APP_CACHE = _sanitize_start_apps(data.get("start_apps", []))
     CACHE_READY = True
     LAST_CACHE_SOURCE = "disk"
     return True
@@ -358,7 +369,7 @@ def _rebuild_cache():
 
     APP_CACHE = []
     CACHE_READY = False
-    START_APP_CACHE = _load_start_apps()
+    START_APP_CACHE = _sanitize_start_apps(_load_start_apps())
 
     for base in SEARCH_PATHS:
         if not base or not os.path.exists(base):
@@ -430,7 +441,7 @@ def find_app(app_name):
     for entry in APP_CACHE:
         if _is_false_positive(app_name, entry):
             continue
-        if entry["ext"] in {".lnk", ".url"} and app_name in entry["names"]:
+        if entry["ext"] == ".lnk" and app_name in entry["names"] and _entry_penalty(entry) < 0.15:
             return entry["path"]
 
     if " " not in app_name:
@@ -483,6 +494,8 @@ def find_start_app(app_name):
 
     if not normalized_name:
         return None
+
+    START_APP_CACHE[:] = _sanitize_start_apps(START_APP_CACHE)
 
     for app in START_APP_CACHE:
         if normalized_name == app["normalized_name"]:

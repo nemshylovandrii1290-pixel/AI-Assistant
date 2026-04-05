@@ -46,7 +46,9 @@ def _find_start_app_id(app_name):
     """
     data = _run_powershell_json(script)
     if isinstance(data, dict):
-        return data.get("AppID")
+        app_id = data.get("AppID")
+        if isinstance(app_id, str) and not app_id.lower().startswith(("http://", "https://")):
+            return app_id
     return None
 
 

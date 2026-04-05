@@ -77,17 +77,21 @@ def _open_path(path):
         return True
     except OSError:
         if path.lower().endswith((".lnk", ".url")):
-            explorer_result = subprocess.run(
-                ["explorer", path],
+            cmd_line = f'start "" "{path}"'
+            cmd_result = subprocess.run(
+                cmd_line,
+                shell=True,
                 check=False,
                 capture_output=True,
                 text=True,
             )
-            if explorer_result.returncode == 0:
+            if cmd_result.returncode == 0:
                 return True
 
+        cmd_line = f'start "" "{path}"'
         cmd_result = subprocess.run(
-            ["cmd", "/c", "start", "", path],
+            cmd_line,
+            shell=True,
             check=False,
             capture_output=True,
             text=True,
