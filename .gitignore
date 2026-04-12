@@ -1,7 +1,25 @@
-.env
+# Python
 __pycache__/
-*.wav
-.cache/
-debug.log
-build/
+*.pyc
+.venv/
+
+# Build
 dist/
+build/
+*.spec
+
+# Logs
+*.log
+
+# Local temp data
+.cache/
+
+# Audio
+*.wav
+
+# Env
+.env
+
+# Node
+node_modules/
+frontend/node_modules/

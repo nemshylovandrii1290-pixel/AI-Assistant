@@ -1,0 +1,53 @@
+@mixin flex-row($align: center, $justify: flex-start, $gap: var(--flex-row-gap), $wrap: nowrap) {
+  display: flex;
+  align-items: $align;
+  justify-content: $justify;
+  gap: $gap;
+  flex-wrap: $wrap;
+}
+
+@mixin flex-column($align: stretch, $justify: flex-start, $gap: var(--flex-column-gap)) {
+  display: flex;
+  flex-direction: column;
+  align-items: $align;
+  justify-content: $justify;
+  gap: $gap;
+}
+
+@mixin panel($padding: 1.5rem, $radius: 18px) {
+  background: var(--app-panel);
+  border: 1px solid var(--app-border);
+  border-radius: $radius;
+  box-shadow: var(--app-shadow);
+  backdrop-filter: blur(18px);
+  padding: $padding;
+}
+
+@mixin page-shell {
+  @include flex-column(stretch, flex-start, 1.5rem);
+  min-height: 100%;
+}
+
+@mixin action-button($background: var(--app-primary), $color: #03121d) {
+  border: 0;
+  border-radius: 999px;
+  background: $background;
+  color: $color;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.9rem 1.25rem;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 18px rgba(14, 165, 233, 0.22);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
