@@ -1,0 +1,15 @@
+@use '@/styles/mixins' as *;
+@use '@/styles/variables' as *;
+
+.settings {
+  @include page-shell;
+}
+
+.settings h2 {
+  font-size: 1.85rem;
+}
+
+.settings p {
+  color: var(--app-text-muted);
+  max-width: 36rem;
+}

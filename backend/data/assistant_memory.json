@@ -1,0 +1,136 @@
+{
+  "phrase_actions": {
+    "закрий інстаграм": {
+      "actions": [
+        {
+          "type": "command",
+          "action": "close_app",
+          "app": "інстаграм"
+        }
+      ],
+      "uses": 2,
+      "last_used_at": "2026-04-05T14:26:01.289997+00:00",
+      "originals": [
+        "закрий інстаграм"
+      ]
+    },
+    "закрий nvidia app": {
+      "actions": [
+        {
+          "type": "command",
+          "action": "close_app",
+          "app": "nvidia app"
+        }
+      ],
+      "uses": 1,
+      "last_used_at": "2026-04-05T14:26:59.381158+00:00",
+      "originals": [
+        "закрий nvidia app"
+      ]
+    },
+    "закрий microsoft store": {
+      "actions": [
+        {
+          "type": "command",
+          "action": "close_app",
+          "app": "microsoft store"
+        }
+      ],
+      "uses": 1,
+      "last_used_at": "2026-04-05T14:27:29.942711+00:00",
+      "originals": [
+        "закрий microsoft store"
+      ]
+    },
+    "закрий калькулятор": {
+      "actions": [
+        {
+          "type": "command",
+          "action": "close_app",
+          "app": "калькулятор"
+        }
+      ],
+      "uses": 1,
+      "last_used_at": "2026-04-05T14:28:35.504105+00:00",
+      "originals": [
+        "закрий калькулятор"
+      ]
+    },
+    "закрий google chrome": {
+      "actions": [
+        {
+          "type": "command",
+          "action": "close_app",
+          "app": "google chrome"
+        }
+      ],
+      "uses": 1,
+      "last_used_at": "2026-04-05T14:29:16.318131+00:00",
+      "originals": [
+        "закрий google chrome"
+      ]
+    },
+    "ігрове середовище": {
+      "actions": [
+        {
+          "type": "open_app",
+          "app": "steam"
+        },
+        {
+          "type": "open_app",
+          "app": "discord"
+        },
+        {
+          "type": "open_app",
+          "app": "google"
+        }
+      ],
+      "uses": 2,
+      "last_used_at": "2026-04-05T16:05:24.321001+00:00",
+      "originals": [
+        "ігрове середовище"
+      ]
+    },
+    "вимкни його": {
+      "actions": [
+        {
+          "type": "command",
+          "action": "close_app",
+          "app": "його"
+        }
+      ],
+      "uses": 1,
+      "last_used_at": "2026-04-05T16:05:01.332916+00:00",
+      "originals": [
+        "вимкни його"
+      ]
+    },
+    "закрий youtube": {
+      "actions": [
+        {
+          "type": "command",
+          "action": "close_app",
+          "app": "youtube"
+        }
+      ],
+      "uses": 1,
+      "last_used_at": "2026-04-06T17:53:25.997114+00:00"
+    }
+  },
+  "app_launch_counts": {
+    "instagram": 4,
+    "envidia": 1,
+    "microsoft store": 1,
+    "google chrome": 1,
+    "google": 2
+  },
+  "scenarios": {
+    "work": [
+      "chatgpt"
+    ],
+    "gaming": [
+      "google",
+      "google chrome"
+    ]
+  }
+}

@@ -1,0 +1,62 @@
+// Design tokens
+$font-family-base: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+$font-family-display: "Trebuchet MS", "Segoe UI", sans-serif;
+
+$color-bg: #0f172a;
+$color-bg-elevated: #162033;
+$color-panel: rgba(15, 23, 42, 0.72);
+$color-panel-strong: #1e293b;
+$color-surface: rgba(30, 41, 59, 0.92);
+$color-border: rgba(148, 163, 184, 0.2);
+$color-text: #e2e8f0;
+$color-text-muted: #94a3b8;
+$color-primary: #38bdf8;
+$color-primary-strong: #0ea5e9;
+$color-accent: #22c55e;
+$color-user-message: linear-gradient(135deg, #0ea5e9, #22c55e);
+$color-ai-message: rgba(148, 163, 184, 0.14);
+
+$shadow-soft: 0 20px 45px rgba(15, 23, 42, 0.3);
+
+$radius-sm: 12px;
+$radius-md: 18px;
+$radius-lg: 28px;
+$radius-pill: 999px;
+
+$space-2xs: 0.25rem;
+$space-xs: 0.5rem;
+$space-sm: 0.75rem;
+$space-md: 1rem;
+$space-lg: 1.5rem;
+$space-xl: 2rem;
+$space-2xl: 3rem;
+
+$header-height: 84px;
+$sidebar-width: 248px;
+$content-width: 1200px;
+$chat-input-height: 56px;
+
+$transition-fast: 160ms ease;
+$transition-base: 240ms ease;
+
+:root {
+  --app-bg: #{$color-bg};
+  --app-bg-elevated: #{$color-bg-elevated};
+  --app-panel: #{$color-panel};
+  --app-panel-strong: #{$color-panel-strong};
+  --app-surface: #{$color-surface};
+  --app-border: #{$color-border};
+  --app-text: #{$color-text};
+  --app-text-muted: #{$color-text-muted};
+  --app-primary: #{$color-primary};
+  --app-primary-strong: #{$color-primary-strong};
+  --app-accent: #{$color-accent};
+  --app-shadow: #{$shadow-soft};
+  --layout-header-height: #{$header-height};
+  --layout-sidebar-width: #{$sidebar-width};
+  --layout-content-width: #{$content-width};
+  --layout-gap: #{$space-lg};
+  --content-padding: #{$space-xl};
+  --flex-row-gap: #{$space-md};
+  --flex-column-gap: #{$space-lg};
+}
