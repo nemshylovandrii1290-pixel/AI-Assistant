@@ -118,6 +118,25 @@ def _try_system_launch(app_name):
     return False
 
 
+def _open_url(target):
+    try:
+        os.startfile(target)
+        return True
+    except OSError:
+        pass
+
+    cmd_result = subprocess.run(
+        ["cmd", "/c", "start", "", target],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if cmd_result.returncode == 0:
+        return True
+
+    return webbrowser.open(target)
+
+
 def execute_action(action, data=None):
     command = COMMANDS.get(action)
 
@@ -182,17 +201,37 @@ def execute_action(action, data=None):
         return {"status": "error", "reason": "unknown_command"}
 
     if command["kind"] == "url":
-        webbrowser.open(command["target"])
+        launched = _open_url(command["target"])
+        if launched:
+            return {
+                "status": "success",
+                "action": action,
+                "meta": data,
+                "target": command["target"],
+            }
         return {
-            "status": "success",
+            "status": "error",
+            "reason": "launch_failed",
             "action": action,
-            "meta": data,
+            "target": command["target"],
         }
 
     if command["kind"] == "command":
-        os.system(command["target"])
+        cmd_result = subprocess.run(
+            ["cmd", "/c", command["target"]],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if cmd_result.returncode == 0:
+            return {
+                "status": "success",
+                "action": action,
+                "meta": data,
+            }
         return {
-            "status": "success",
+            "status": "error",
+            "reason": "launch_failed",
             "action": action,
             "meta": data,
         }

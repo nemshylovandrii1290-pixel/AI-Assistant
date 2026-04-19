@@ -26,4 +26,5 @@ function renderRoute(path) {
   if (!component) return;
 
   render(component());
+  window.dispatchEvent(new CustomEvent('edith:route-changed', { detail: { path } }));
 }

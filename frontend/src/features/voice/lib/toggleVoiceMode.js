@@ -1,51 +1,60 @@
 import { sendVoiceTranscript } from '@/features/assistant/api/assistantApi';
 import {
   getVoiceSession,
-  resetVoiceSession,
   setVoiceResponse,
-  startVoiceRecognition,
+  startVoiceRecognitionLoop,
   stopVoiceRecognition,
 } from '@/features/voice/model/session';
 import { refreshRoute } from '@/app/router';
 import { isSpeechEnabled } from '@/shared/model/preferences';
 
-export async function toggleVoiceMode() {
-  const session = getVoiceSession();
+export function syncVoiceModeForRoute(path) {
+  if (path !== '/') {
+    return;
+  }
 
-  if (session.state === 'listening') {
-    stopVoiceRecognition();
+  const session = getVoiceSession();
+  if (!session.supported) {
     refreshRoute();
     return;
   }
 
-  const started = startVoiceRecognition({
-    onResult: async (transcript) => {
-      refreshRoute();
+  let isSpeaking = false;
+
+  startVoiceRecognitionLoop({
+    onTranscript: async (transcript) => {
+      if (isSpeaking) return;
+
+      const spoken = isSpeechEnabled();
+      const isWakeOnly = transcript === '__wake__';
 
       try {
         const data = await sendVoiceTranscript({
-          transcript,
-          speak: isSpeechEnabled(),
+          transcript: isWakeOnly ? 'edit' : transcript,
+          speak: isWakeOnly ? false : spoken,
         });
 
-        setVoiceResponse(data.reply || 'Я почула тебе.');
+        isSpeaking = true;
+
+        setVoiceResponse(data.reply || 'Я почула тебе.', {
+          spoken: isWakeOnly ? false : spoken,
+          delayMs: isWakeOnly && spoken ? 7000 : null,
+          onEnd: () => {
+            isSpeaking = false;
+            startVoiceRecognitionLoopAgain(); // 👈 треба буде зробити
+          },
+        });
       } catch (error) {
-        setVoiceResponse(error.message);
+        isSpeaking = false;
+
+        setVoiceResponse(error.message || 'Could not reach Edith backend.', {
+          spoken: false,
+        });
+
+        startVoiceRecognitionLoopAgain();
       }
 
-      refreshRoute();
-    },
-    onError: () => {
-      refreshRoute();
     },
   });
 
-  if (started) {
-    refreshRoute();
-  }
-}
-
-export function resetVoiceMode() {
-  resetVoiceSession();
-  refreshRoute();
 }

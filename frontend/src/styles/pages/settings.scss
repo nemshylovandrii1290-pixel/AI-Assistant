@@ -1,15 +1,85 @@
 @use '@/styles/mixins' as *;
 @use '@/styles/variables' as *;
 
-.settings {
-  @include page-shell;
+.settings-screen {
+  display: grid;
+  place-items: center;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  min-height: 100%;
 }
 
-.settings h2 {
-  font-size: 1.85rem;
+.settings-card {
+  @include panel(clamp(1.5rem, 3vw, 2.5rem), $radius-lg);
+  @include flex-column(flex-start, flex-start, $space-lg);
+  width: min(100%, 720px);
+  background:
+    linear-gradient(180deg, rgba(10, 13, 33, 0.94), rgba(8, 11, 28, 0.92)),
+    radial-gradient(circle at top right, rgba(108, 99, 255, 0.16), transparent 32%);
+  border: 1px solid rgba(100, 174, 255, 0.24);
 }
 
-.settings p {
+.settings-card__eyebrow {
+  padding: $space-xs $space-sm;
+  border-radius: $radius-pill;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  background: rgba(56, 189, 248, 0.08);
+  color: #c7d9ff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-card h2 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  color: #eef2ff;
+}
+
+.settings-card p {
   color: var(--app-text-muted);
-  max-width: 36rem;
+  max-width: 42rem;
+}
+
+.settings-grid {
+  display: grid;
+  gap: $space-md;
+  width: 100%;
+}
+
+.settings-item {
+  @include flex-column(flex-start, flex-start, $space-xs);
+  padding: $space-lg;
+  border-radius: $radius-md;
+  border: 1px solid rgba(116, 144, 255, 0.16);
+  background: rgba(17, 24, 45, 0.72);
+}
+
+.settings-item__label {
+  color: #a5b4fc;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.settings-item__value {
+  color: #f8fafc;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.settings-item__hint {
+  color: var(--app-text-muted);
+}
+
+.status-online {
+  color: #86efac;
+}
+
+.status-offline {
+  color: #fca5a5;
+}
+
+.status-checking {
+  color: #7dd3fc;
 }

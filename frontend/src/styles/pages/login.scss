@@ -2,23 +2,74 @@
 @use '@/styles/variables' as *;
 
 .login-page {
-  @include page-shell;
-  justify-content: center;
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: clamp(1.5rem, 4vw, 3rem);
 }
 
 .login-card {
   @include panel($space-xl, $radius-lg);
   @include flex-column(flex-start, flex-start, $space-lg);
-  max-width: 36rem;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(18, 33, 60, 0.9));
+  width: min(100%, 620px);
+  background:
+    linear-gradient(180deg, rgba(10, 13, 33, 0.94), rgba(8, 11, 28, 0.92)),
+    radial-gradient(circle at top left, rgba(135, 92, 255, 0.14), transparent 30%);
+  border: 1px solid rgba(100, 174, 255, 0.24);
+}
+
+.login-card__eyebrow {
+  padding: $space-xs $space-sm;
+  border-radius: $radius-pill;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  background: rgba(56, 189, 248, 0.08);
+  color: #c7d9ff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .login-card h2 {
-  font-size: 2rem;
+  font-size: clamp(2rem, 4vw, 3rem);
+  color: #eef2ff;
 }
 
 .login-card p {
   color: var(--app-text-muted);
+}
+
+.login-form {
+  display: grid;
+  gap: $space-md;
+  width: 100%;
+}
+
+.login-field {
+  @include flex-column(flex-start, flex-start, $space-xs);
+  width: 100%;
+  color: #cbd5e1;
+}
+
+.login-field span {
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.login-field input {
+  width: 100%;
+  min-height: 3.6rem;
+  padding: 0 1rem;
+  border-radius: $radius-md;
+  border: 1px solid rgba(116, 144, 255, 0.16);
+  background: rgba(17, 24, 45, 0.72);
+  color: #f8fafc;
+}
+
+.login-field input::placeholder {
+  color: #64748b;
 }
 
 .login-actions {

@@ -36,8 +36,8 @@
           "app": "microsoft store"
         }
       ],
-      "uses": 1,
-      "last_used_at": "2026-04-05T14:27:29.942711+00:00",
+      "uses": 2,
+      "last_used_at": "2026-04-19T19:31:11.869525+00:00",
       "originals": [
         "закрий microsoft store"
       ]
@@ -113,16 +113,97 @@
           "app": "youtube"
         }
       ],
+      "uses": 3,
+      "last_used_at": "2026-04-19T19:39:14.944459+00:00",
+      "originals": [
+        "закрий youtube"
+      ]
+    },
+    "закрий клик оп": {
+      "actions": [
+        {
+          "type": "command",
+          "action": "close_app",
+          "app": "клик оп"
+        }
+      ],
+      "uses": 3,
+      "last_used_at": "2026-04-19T19:32:35.314698+00:00",
+      "originals": [
+        "закрий клик оп"
+      ]
+    },
+    "закрий клик up": {
+      "actions": [
+        {
+          "type": "command",
+          "action": "close_app",
+          "app": "клик up"
+        }
+      ],
       "uses": 1,
-      "last_used_at": "2026-04-06T17:53:25.997114+00:00"
+      "last_used_at": "2026-04-19T19:32:46.221274+00:00",
+      "originals": [
+        "закрий клик up"
+      ]
+    },
+    "закрий nvido": {
+      "actions": [
+        {
+          "type": "command",
+          "action": "close_app",
+          "app": "nvido"
+        }
+      ],
+      "uses": 1,
+      "last_used_at": "2026-04-19T19:33:34.019783+00:00",
+      "originals": [
+        "закрий nvido"
+      ]
+    },
+    "закрий nvidia": {
+      "actions": [
+        {
+          "type": "command",
+          "action": "close_app",
+          "app": "nvidia"
+        }
+      ],
+      "uses": 1,
+      "last_used_at": "2026-04-19T19:33:42.756030+00:00",
+      "originals": [
+        "закрий nvidia"
+      ]
+    },
+    "закрий лімкетін": {
+      "actions": [
+        {
+          "type": "command",
+          "action": "close_app",
+          "app": "лімкетін"
+        }
+      ],
+      "uses": 1,
+      "last_used_at": "2026-04-19T19:36:14.510014+00:00",
+      "originals": [
+        "закрий лімкетін"
+      ]
     }
   },
   "app_launch_counts": {
     "instagram": 4,
-    "envidia": 1,
-    "microsoft store": 1,
+    "envidia": 2,
+    "microsoft store": 3,
     "google chrome": 1,
-    "google": 2
+    "google": 2,
+    "youtube": 3,
+    "klikup": 1,
+    "clickup": 1,
+    "aimp": 1,
+    "axl": 1,
+    "excel": 1,
+    "linkedin": 1,
+    "nvidia app": 1
   },
   "scenarios": {
     "work": [
